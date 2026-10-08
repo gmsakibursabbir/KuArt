@@ -1,0 +1,13 @@
+[package]
+name = "ude-core"
+description = "Universal Design Model: compact scene graph, assets, ops and history"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Intentionally dependency-free. See docs/architecture.md §5.
+[dependencies]
+
+[lints]
+workspace = true
