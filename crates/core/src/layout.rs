@@ -56,12 +56,19 @@ pub enum ChildSizing {
     Fill,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct LayoutChild {
     pub h_sizing: ChildSizing,
     pub v_sizing: ChildSizing,
     /// Ignores the parent's auto layout.
     pub absolute: bool,
+    /// Min/max sizes; rare, so boxed.
+    pub limits: Option<Box<SizeLimits>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct SizeLimits {
+    /// width, height
     pub min: [Option<f32>; 2],
     pub max: [Option<f32>; 2],
 }

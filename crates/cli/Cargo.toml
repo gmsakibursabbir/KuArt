@@ -1,0 +1,20 @@
+[package]
+name = "ude-cli"
+description = "Headless command-line tools (no GUI, no GPU)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "design-editor-cli"
+path = "src/main.rs"
+
+[dependencies]
+ude-core = { path = "../core" }
+ude-format-native = { path = "../formats/native" }
+# Synthetic documents for `generate`.
+ude-bench = { path = "../benchmarks" }
+
+[lints]
+workspace = true

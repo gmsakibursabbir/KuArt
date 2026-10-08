@@ -98,6 +98,16 @@ impl Arena {
         })
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.slots.shrink_to_fit();
+        self.free.shrink_to_fit();
+        for slot in &mut self.slots {
+            if let Some(n) = &mut slot.node {
+                n.children.shrink_to_fit();
+            }
+        }
+    }
+
     pub fn heap_bytes(&self) -> usize {
         self.slots.capacity() * size_of::<Slot>() + self.free.capacity() * size_of::<u32>()
     }

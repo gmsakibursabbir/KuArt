@@ -23,6 +23,7 @@ pub enum Prop {
     Fills(Paints),
     Ext(Option<Box<NodeExt>>),
     Kind(NodeKind),
+    CornerRadius(f32),
 }
 
 impl Prop {
@@ -38,6 +39,7 @@ impl Prop {
             Prop::Fills(_) => 6,
             Prop::Ext(_) => 7,
             Prop::Kind(_) => 8,
+            Prop::CornerRadius(_) => 9,
         }
     }
 
@@ -134,6 +136,9 @@ impl ChangeSet {
 pub struct Metadata {
     pub title: String,
     pub source: Option<crate::scene::SourceFormat>,
+    /// Sections written by newer versions that this build does not understand,
+    /// kept verbatim so re-saving does not drop them. Keyed by a 4-byte tag.
+    pub preserved_sections: Vec<([u8; 4], std::sync::Arc<[u8]>)>,
 }
 
 pub struct Document {
@@ -199,6 +204,21 @@ impl Document {
         node.parent = None;
         node.children = Vec::new();
         self.arena.alloc(node)
+    }
+
+    /// Non-undoable construction for loaders: replaces a node's data while keeping its
+    /// tree links. The root must stay a `Document`.
+    pub fn fill(&mut self, id: NodeId, mut node: Node) -> Result<(), DocError> {
+        if id == self.root && !matches!(node.kind, NodeKind::Document) {
+            return Err(DocError::RootImmutable);
+        }
+        let slot = self.arena.get_mut(id).ok_or(DocError::NotFound(id))?;
+        node.parent = slot.parent;
+        node.children = std::mem::take(&mut slot.children);
+        *slot = node;
+        self.changes.nodes.push(id);
+        self.revision += 1;
+        Ok(())
     }
 
     /// Non-undoable construction for importers: create and append under `parent`.
@@ -358,11 +378,16 @@ impl Document {
         c
     }
 
+    /// Releases growth slack in the arena and child lists (call after load/import).
+    pub fn shrink_to_fit(&mut self) {
+        self.arena.shrink_to_fit();
+    }
+
     pub fn memory_report(&self) -> MemoryReport {
         let mut r = MemoryReport::default();
         r.push("Nodes", self.heap_size());
         r.push("Strings", self.strings.heap_bytes());
-        r.push("Assets (meta)", self.assets.heap_bytes());
+        r.push("Assets", self.assets.heap_bytes());
         r
     }
 }
@@ -390,6 +415,9 @@ fn swap_prop(node: &mut Node, value: Prop) -> Prop {
         Prop::Fills(v) => Prop::Fills(mem::replace(&mut node.fills, v)),
         Prop::Ext(v) => Prop::Ext(mem::replace(&mut node.ext, v)),
         Prop::Kind(v) => Prop::Kind(mem::replace(&mut node.kind, v)),
+        Prop::CornerRadius(v) => {
+            Prop::CornerRadius(mem::replace(&mut node.corner_radius, v.max(0.0)))
+        }
     }
 }
 

@@ -1,0 +1,15 @@
+[package]
+name = "ude-bench"
+description = "Synthetic documents and benchmarks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ude-core = { path = "../core" }
+ude-format-native = { path = "../formats/native" }
+
+[lints]
+workspace = true

@@ -4,9 +4,10 @@ A native Rust design editor (no Electron, no browser engine) that opens, edits a
 Adobe XD, Photoshop, SVG and PDF designs in one GPU-accelerated canvas, with a built-in Dev Mode
 for CSS/HTML/Tailwind/React/Vue output. It is built to run well on older PCs with 8 GB of RAM.
 
-**Status: Milestone 0.** The design documents are written, and the core scene graph, undo/redo
-history and memory accounting are implemented and tested. There is no GUI yet. See the
-[roadmap](docs/roadmap.md).
+**Status: Milestone 1 done.** The core scene graph, undo/redo and memory accounting are in place,
+along with the native `.design` format, a headless CLI and benchmarks (100k nodes: save 219 ms,
+load 146 ms, 215 bytes/node). There is no GUI yet. See the [roadmap](docs/roadmap.md) and
+[perf log](docs/perf-log.md).
 
 ## Documents
 
@@ -29,4 +30,12 @@ Requires stable Rust (1.85+). Builds on Windows and Linux.
 
 ```bash
 cargo test --workspace
+```
+
+```bash
+cargo run --release -p ude-bench
+```
+
+```bash
+cargo run --release -p ude-cli -- generate demo.design --nodes 10000
 ```

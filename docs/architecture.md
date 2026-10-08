@@ -50,7 +50,8 @@ Every dependency must justify itself. The core model crate has **zero** third-pa
 | Containers | `zip` (deflate only), `zstd` | `.fig`/`.xd` are zip-based; `.design` uses zstd | — |
 | Raster codecs | `zune-jpeg`, `png`, `image-webp`, `fast_image_resize` | Scaled JPEG decode (1/2, 1/4, 1/8) and SIMD downsampling for lazy mips | full `image` crate with every codec |
 | PDF export | `krilla` | High-level, correct PDF writer (fonts, gradients, transparency) | `printpdf` |
-| Serialization | `serde` + `postcard` (native), `serde_json` (XD / Figma REST JSON) | Compact, deterministic, no schema compiler | protobuf / flatbuffers |
+| Native serialization | hand-written varint encoding + `zstd` + `blake3` (see format-strategy.md §8) | Deterministic id/string remapping, `ude-core` stays dependency-free, explicit wire contract | serde + postcard (cannot remap ids), protobuf / flatbuffers |
+| JSON parsing | `serde_json` (XD / Figma REST JSON importers only) | Mature, streaming | — |
 | Parallelism | `rayon` | Decode, import and tile rendering | ad-hoc threads |
 | Hashing | `blake3` | Content-addressed assets | SHA-256 (slower) |
 | Spatial index | `rstar` | R-tree for hit testing and culling | quadtree written by hand |

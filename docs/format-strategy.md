@@ -165,27 +165,64 @@ backend (deterministic, no GPU needed) at a chosen scale, with sRGB tagging.
 
 ## 8. Native `.design`
 
+Implemented in `crates/formats/native` (M1). Format version **0**.
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ magic "UDESIGN\0"  · format version u16 · flags              │
-│ chunk table: [ kind, offset u64, len u64, codec, blake3 ]    │  ← read first; enables streaming
-├──────────────────────────────────────────────────────────────┤
-│ META      postcard: title, app version, page list, stats     │
-│ STRINGS   interned string table                              │
-│ PAGE n    postcard nodes of page n (zstd), one chunk per page│  ← lazy page loading
-│ STYLES    shared styles, variables                           │
-│ ASSET h   raw asset bytes keyed by blake3 hash (stored, not  │
-│           re-compressed if already PNG/JPEG)                 │
-│ FONTS     optional embedded fonts (user opt-in, license!)    │
-│ PRESERVED raw source blobs                                   │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ "UDESIGN\0" · version u16 LE · flags u16 LE · chunk count u32 LE     │
+│ chunk table, 61 B per entry:                                         │  ← read first; enables streaming
+│   tag[4] · offset u64 · stored len u64 · raw len u64 · codec u8 ·    │
+│   blake3(raw)[32]                                                    │
+├──────────────────────────────────────────────────────────────────────┤
+│ META   title, source format, node count, page count                  │
+│ STRS   string table, only strings that are referenced, first-use order│
+│ ASET   asset table: blake3 content hash, kind, codec (i-th ↔ i-th BLOB)│
+│ ROOT   the document node record                                      │
+│ PAGE   one chunk per page: pre-order node records with child counts  │  ← lazy page loading later
+│ BLOB   one chunk per asset; already-compressed codecs stored as-is   │
+│ ????   unknown chunks from newer versions, preserved verbatim        │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-* **Deterministic:** stable chunk order, nodes in tree order, no timestamps inside the hashed
-  chunks. The same document always produces byte-identical output.
-* **Forward compatible:** unknown chunk kinds are preserved on re-save. Within a chunk every record
-  carries a version, and new fields are appended with defaults.
-* **Streamable:** opening reads META plus the visible page. Other pages load when navigated to.
+**Encoding.** This is a small hand-written binary encoding (`wire.rs`): LEB128 varints,
+little-endian `f32`, and length-prefixed strings and records. We chose it over serde + postcard for
+three reasons:
+1. `ude-core` stays dependency-free.
+2. Every `NodeId`, `Symbol` and `AssetId` must be **remapped** to dense indices (pre-order /
+   first-use) for determinism, which serde derives can't express.
+3. The format contract stays explicit in one file (`model.rs`), with encoder and decoder side by
+   side.
+
+* **Deterministic:** chunk order is fixed, nodes are written in pre-order, and ids, strings and
+  assets are renumbered by first use. Two documents with the same content produce byte-identical
+  files regardless of edit history, undo or interner contents (test
+  `same_content_same_bytes_regardless_of_history`). One caveat: bytes are identical *per zstd
+  library version*. The hashes cover the raw bytes, so integrity checks are unaffected.
+* **Forward compatible:**
+  * Unknown chunk kinds are preserved on re-save (`Metadata::preserved_sections`).
+  * Node, ext, asset and meta records are length-prefixed, so a reader skips trailing fields it
+    doesn't know. **Rule after the first release:** new fields are only *appended* to a record,
+    never inserted. Enum wire codes are append-only (`wire_enum!`, which also fails to compile if
+    a core enum gains an unlisted variant).
+  * A newer major layout bumps the header version, and older apps refuse such files with a clear
+    message.
+* **Sharing restored on load:** identical paint lists and vector paths are length-prefixed blobs,
+  and the decoder hash-conses them, so `Arc` sharing (and its memory savings) survives a round trip.
+* **Safety:**
+  * All reads are bounds-checked, and forged counts are rejected when they exceed the remaining
+    input.
+  * zstd output is capped at the declared raw length (decompression-bomb guard).
+  * Each chunk's blake3 hash is verified.
+  * Node count, chunk count, chunk size and override nesting depth are limited (`Limits`).
+  * The test suite flips bytes and truncates files at hundreds of positions and checks that the
+    loader returns an error and never panics.
+* **Atomic save:** the file is written to `*.design.tmp`, then renamed.
+* **Not yet:**
+  * Assets still backed by an unloaded source file (`AssetSource::FileRange`) are refused with
+    `UnresolvedAsset`. Importers will resolve them when saving (M10–M12).
+  * Lazy page loading and mmap-backed BLOBs come with the GUI.
+* **Streamable (planned):** opening reads META plus the visible page, and other pages load when
+  navigated to. The chunk table already supports this.
 * **Autosave journal:** `project.design.journal` is an append-only log of transactions (forward
   ops, postcard + CRC per record). Recovery replays the journal over the last full save.
   Compaction rewrites only dirty page chunks.

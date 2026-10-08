@@ -38,7 +38,8 @@ pub enum AssetKind {
 
 #[derive(Clone, Debug)]
 pub enum AssetSource {
-    Memory(Arc<[u8]>),
+    /// Resident bytes, still encoded with `codec`.
+    Memory { bytes: Arc<[u8]>, codec: Codec },
     /// Byte range inside a memory-mapped source file.
     FileRange {
         file: SourceFileId,
@@ -91,7 +92,7 @@ impl AssetStore {
             .entries
             .iter()
             .map(|e| match &e.source {
-                AssetSource::Memory(b) => b.len() / Arc::strong_count(b),
+                AssetSource::Memory { bytes, .. } => bytes.len() / Arc::strong_count(bytes),
                 AssetSource::FileRange { .. } => 0,
             })
             .sum();
@@ -111,7 +112,10 @@ mod tests {
         let e = AssetEntry {
             hash: ContentHash([7; 32]),
             kind: AssetKind::Blob,
-            source: AssetSource::Memory(Arc::from(&b"abc"[..])),
+            source: AssetSource::Memory {
+                bytes: Arc::from(&b"abc"[..]),
+                codec: Codec::Raw,
+            },
         };
         let a = store.insert(e.clone());
         let b = store.insert(e);

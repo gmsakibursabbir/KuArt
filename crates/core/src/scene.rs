@@ -7,7 +7,7 @@ use crate::document::Prop;
 use crate::geometry::{Affine, FillRule, PathData, Size};
 use crate::id::NodeId;
 use crate::intern::Symbol;
-use crate::layout::{AutoLayout, Constraints, LayoutChild, LayoutGrid};
+use crate::layout::{AutoLayout, Constraints, LayoutChild, LayoutGrid, SizeLimits};
 use crate::styles::{BlendMode, Effect, Paints, Stroke};
 use crate::typography::TextData;
 
@@ -45,6 +45,10 @@ impl NodeFlags {
 
     pub const fn bits(self) -> u16 {
         self.0
+    }
+
+    pub const fn from_bits(bits: u16) -> Self {
+        NodeFlags(bits)
     }
 }
 
@@ -226,14 +230,16 @@ pub enum LayerMask {
 /// Rare node data; absent for most nodes (8 bytes in [`Node`]).
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct NodeExt {
-    pub strokes: Option<Stroke>,
+    // Large, less common parts are boxed so a NodeExt holding only, say, an effect stays small.
+    pub strokes: Option<Box<Stroke>>,
     pub effects: Box<[Effect]>,
-    pub corners: CornerRadii,
-    pub auto_layout: Option<AutoLayout>,
+    /// Per-corner radii and smoothing; overrides `Node::corner_radius` when set.
+    pub corners: Option<CornerRadii>,
+    pub auto_layout: Option<Box<AutoLayout>>,
     pub layout_child: LayoutChild,
     pub constraints: Constraints,
     pub grids: Box<[LayoutGrid]>,
-    pub layer_mask: Option<LayerMask>,
+    pub layer_mask: Option<Box<LayerMask>>,
     /// Original id in the source file (round-trip, diagnostics, override paths).
     pub source_id: Symbol,
     pub preserved: Vec<Preserved>,
@@ -241,9 +247,21 @@ pub struct NodeExt {
 
 impl NodeExt {
     pub fn heap_bytes(&self) -> usize {
-        self.strokes
+        self.strokes.as_ref().map_or(0, |s| {
+            size_of::<Stroke>() + s.paints.heap_bytes() + s.dashes.len() * 4
+        }) + self
+            .auto_layout
             .as_ref()
-            .map_or(0, |s| s.paints.heap_bytes() + s.dashes.len() * 4)
+            .map_or(0, |_| size_of::<AutoLayout>())
+            + self
+                .layer_mask
+                .as_ref()
+                .map_or(0, |_| size_of::<LayerMask>())
+            + self
+                .layout_child
+                .limits
+                .as_ref()
+                .map_or(0, |_| size_of::<SizeLimits>())
             + self.effects.len() * size_of::<Effect>()
             + self.grids.len() * size_of::<LayoutGrid>()
             + self.preserved.capacity() * size_of::<Preserved>()
@@ -262,6 +280,9 @@ pub struct Node {
     /// Local box `(0,0)-(w,h)`.
     pub size: Size,
     pub opacity: f32,
+    /// Uniform corner radius (the common case). Per-corner radii live in `NodeExt::corners`.
+    /// Fits in padding: `Node` stays 120 bytes.
+    pub corner_radius: f32,
     pub blend: BlendMode,
     pub flags: NodeFlags,
     pub fills: Paints,
@@ -283,6 +304,7 @@ impl Node {
             transform: Affine::IDENTITY,
             size: Size::default(),
             opacity: 1.0,
+            corner_radius: 0.0,
             blend,
             flags: NodeFlags::VISIBLE,
             fills: Paints::default(),
@@ -303,6 +325,14 @@ impl Node {
     pub fn with_fills(mut self, fills: Paints) -> Self {
         self.fills = fills;
         self
+    }
+
+    /// Effective radii: top-left, top-right, bottom-right, bottom-left.
+    pub fn corner_radii(&self) -> [f32; 4] {
+        self.ext
+            .as_ref()
+            .and_then(|e| e.corners)
+            .map_or([self.corner_radius; 4], |c| c.radii)
     }
 
     pub fn is_visible(&self) -> bool {
@@ -331,6 +361,11 @@ mod tests {
 
     #[test]
     fn node_is_compact() {
+        assert!(
+            size_of::<NodeExt>() <= 128,
+            "NodeExt is {} bytes",
+            size_of::<NodeExt>()
+        );
         assert!(
             size_of::<Node>() <= 128,
             "Node is {} bytes",

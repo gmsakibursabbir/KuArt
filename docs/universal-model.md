@@ -30,11 +30,17 @@ Figma, XD and Photoshop.
 
 | Structure | Budget | Notes |
 |---|---|---|
-| `Node` | ≤ 128 bytes | test `node_is_compact` |
+| `Node` | ≤ 128 bytes (measured: 120) | test `node_is_compact` |
+| `NodeExt` | ≤ 128 bytes (measured: 128) | test `node_is_compact` |
 | `NodeId` / `Option<NodeId>` | 8 / 8 bytes | test `ids_are_compact` |
 | `Symbol` | 4 bytes | |
 | `Paint` | ≤ 32 bytes | gradients behind `Arc` |
-| Per-node average incl. side tables, 100k-node doc | ≤ 250 bytes | benchmark `model_footprint` |
+| Per-node average incl. side tables, 100k-node doc | ≤ 250 bytes (measured M1: 215) | `ude-bench`, loaded document |
+
+The M1 benchmark found 324 B/node on its first run. A rounded rectangle needed a whole 216-byte
+`NodeExt` just for its radius. Moving the uniform radius into `Node` padding, boxing the rare
+`NodeExt` parts and calling `shrink_to_fit` after load brought it to 215 B/node. About half of that
+is real content (path points and text), not overhead.
 
 ## 3. Scene graph
 
@@ -65,6 +71,7 @@ pub struct Node {
     pub transform: Affine,          // 24 B, local → parent, f32
     pub size: Size,                 // 8 B, local box (0,0)-(w,h)
     pub opacity: f32,
+    pub corner_radius: f32,         // uniform radius, fits in padding; per-corner in ext
     pub blend: BlendMode,           // u8
     pub flags: NodeFlags,           // u16: VISIBLE, LOCKED, CLIPS_CONTENT, IS_MASK, …
     pub fills: Paints,              // Option<Arc<[Paint]>>, 16 B, empty = no allocation
@@ -100,20 +107,22 @@ renderer, not in the model.
 ### 3.3 NodeExt (cold part)
 
 ```rust
-pub struct NodeExt {
-    pub strokes: Option<Stroke>,          // paints, weight, align, cap, join, dashes
-    pub effects: Box<[Effect]>,           // drop/inner shadow, layer/background blur
-    pub corners: CornerRadii,             // per-corner + smoothing
-    pub auto_layout: Option<AutoLayout>,  // container behaviour
-    pub layout_child: LayoutChild,        // sizing modes (fixed/hug/fill), absolute, min/max
-    pub constraints: Constraints,         // horizontal/vertical: min/max/center/stretch/scale
-    pub layer_mask: Option<LayerMask>,    // PSD raster/vector mask
-    pub adjustment: Option<Adjustment>,   // PSD adjustment layer (rendered via fallback until supported)
-    pub style_refs: StyleRefs,            // links to shared styles / variables
-    pub source_id: Symbol,                // original id in the source file (round-trip, diagnostics)
-    pub preserved: Vec<Preserved>,        // raw unsupported source data
+pub struct NodeExt {                           // 128 bytes; large rare parts boxed
+    pub strokes: Option<Box<Stroke>>,          // paints, weight, align, cap, join, dashes
+    pub effects: Box<[Effect]>,                // drop/inner shadow, layer/background blur
+    pub corners: Option<CornerRadii>,          // per-corner + smoothing; overrides Node::corner_radius
+    pub auto_layout: Option<Box<AutoLayout>>,  // container behaviour
+    pub layout_child: LayoutChild,             // sizing modes, absolute, Option<Box<SizeLimits>>
+    pub constraints: Constraints,              // horizontal/vertical: min/max/center/stretch/scale
+    pub grids: Box<[LayoutGrid]>,
+    pub layer_mask: Option<Box<LayerMask>>,    // PSD raster/vector mask
+    pub source_id: Symbol,                     // original id in the source file (round-trip, diagnostics)
+    pub preserved: Vec<Preserved>,             // raw unsupported source data
 }
 ```
+
+Planned additions (phase 2): `adjustment` (PSD adjustment layers, rendered via fallback until
+supported) and `style_refs` (links to shared styles and variables), both boxed.
 
 ### 3.4 Paint, stroke and effects
 
