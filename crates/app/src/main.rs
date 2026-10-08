@@ -10,6 +10,11 @@
 //! Selection: click = select layer (group-first), Ctrl/Cmd+click = deep select,
 //! Shift+click = add/remove, double-click = enter group, drag on empty canvas = marquee,
 //! Esc = select parent / clear, Ctrl/Cmd+A = select all at the current level.
+//!
+//! Editing: drag a selected layer = move (Shift = lock axis, snaps to other layers),
+//! drag a handle = resize (Shift = keep ratio, Alt = from centre), drag just outside a
+//! corner = rotate (Shift = 15° steps), arrows = nudge 1 (Shift = 10), Delete = delete,
+//! Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo, Esc while dragging = cancel.
 
 mod backend;
 mod camera;
@@ -22,9 +27,11 @@ use std::time::{Duration, Instant};
 use backend::{Backend, FrameResult};
 use camera::Camera;
 use selection_ui::{Marquee, build_overlay};
-use ude_core::{Document, NodeId, NodeKind};
+use ude_core::{Document, History, NodeId, NodeKind};
+use ude_editor::transform::{self, Modifiers};
 use ude_editor::{
-    Selection, SelectionMode, hit_test, marquee_select, resolve_target, selection::drill,
+    Gesture, HandleIndex, Selection, SelectionMode, Snapper, drill, hit_test, marquee_select,
+    resolve_target,
 };
 use ude_renderer::View;
 use ude_renderer::vello::kurbo::{Point, Rect, Vec2};
@@ -115,11 +122,43 @@ struct App {
     hover: Option<NodeId>,
     marquee: Option<Marquee>,
     last_click: Option<(Instant, Point)>,
+    history: History,
+    drag: Option<Drag>,
+    /// Snap guides of the running gesture, in document coordinates.
+    guides: Vec<(Point, Point)>,
+    /// Handle box of the last drawn selection (device space), for handle picking.
+    selection_box: Option<[Point; 4]>,
+    /// Source of unique merge keys: one per gesture or nudge sequence.
+    merge_seq: u64,
+    nudge_key: Option<u64>,
+    cursor_icon: CursorIcon,
+}
+
+enum Drag {
+    /// Pressed on a selected layer; becomes a move once the pointer travels far enough.
+    Pending { start: Point },
+    Active {
+        gesture: Gesture,
+        snapper: Option<Snapper>,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum Pick {
+    Resize(HandleIndex),
+    Rotate,
 }
 
 /// Pointer tolerance for hit testing, in device pixels.
 const HIT_TOLERANCE_PX: f64 = 3.0;
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
+/// Pointer travel before a press on a selected layer starts moving it (logical pixels).
+const DRAG_THRESHOLD: f64 = 3.0;
+const HANDLE_RADIUS: f64 = 6.0;
+/// Rotation zone just outside the corner handles (logical pixels).
+const ROTATE_RADIUS: f64 = 20.0;
+/// Snap distance in logical pixels.
+const SNAP_PX: f64 = 6.0;
 
 impl App {
     fn new(options: Options, mut doc: Document, title: String) -> Self {
@@ -130,6 +169,13 @@ impl App {
         let index = page.map(|p| SpatialIndex::build(&doc, p));
         let _ = doc.take_changes();
         Self {
+            history: History::default(),
+            drag: None,
+            guides: Vec::new(),
+            selection_box: None,
+            merge_seq: 0,
+            nudge_key: None,
+            cursor_icon: CursorIcon::Default,
             index,
             selection: Selection::default(),
             hover: None,
@@ -201,7 +247,7 @@ impl App {
             self.fitted = true;
             self.zoom_to_fit();
         }
-        // Keep derived state in sync with document edits (none yet in M3; M4 adds tools).
+        // Keep derived state in sync with document edits.
         let changes = self.doc.take_changes();
         if let Some(index) = &mut self.index {
             index.update(&self.doc, &changes);
@@ -216,18 +262,26 @@ impl App {
             width,
             height,
         };
-        let overlay = match &self.index {
+        let dragging = matches!(self.drag, Some(Drag::Active { .. }));
+        let mut overlay = match &self.index {
             Some(index) => build_overlay(
                 &self.doc,
                 index,
                 view.transform,
                 window.scale_factor(),
                 &self.selection,
-                self.hover,
+                // No hover outline while dragging: it would trail the moving layer.
+                if dragging { None } else { self.hover },
                 self.marquee.as_ref(),
             ),
             None => Default::default(),
         };
+        overlay.guides = self
+            .guides
+            .iter()
+            .map(|&(a, b)| (view.transform * a, view.transform * b))
+            .collect();
+        self.selection_box = overlay.selection_box.map(|o| o.quad);
         let Some(backend) = self.backend.as_mut() else {
             return;
         };
@@ -280,7 +334,38 @@ impl App {
             self.modifiers.shift_key(),
             self.modifiers.control_key() || self.modifiers.super_key(),
         );
+        if self.drag.is_some() {
+            // Esc cancels a running gesture; other keys wait until it ends.
+            if code == KeyCode::Escape {
+                self.cancel_drag();
+            }
+            return;
+        }
+        let arrow = match code {
+            KeyCode::ArrowLeft => Some(Vec2::new(-1.0, 0.0)),
+            KeyCode::ArrowRight => Some(Vec2::new(1.0, 0.0)),
+            KeyCode::ArrowUp => Some(Vec2::new(0.0, -1.0)),
+            KeyCode::ArrowDown => Some(Vec2::new(0.0, 1.0)),
+            _ => None,
+        };
+        if let Some(dir) = arrow {
+            self.nudge(dir * if shift { 10.0 } else { 1.0 });
+            return;
+        }
+        self.nudge_key = None;
         match code {
+            KeyCode::KeyZ if ctrl && shift => self.redo(),
+            KeyCode::KeyZ if ctrl => self.undo(),
+            KeyCode::KeyY if ctrl => self.redo(),
+            KeyCode::Delete | KeyCode::Backspace if !self.selection.is_empty() => {
+                let ids = self.selection.ids().to_vec();
+                match transform::delete(&mut self.doc, &mut self.history, &ids) {
+                    Ok(()) => self.selection.clear(),
+                    Err(e) => eprintln!("delete failed: {e}"),
+                }
+                self.hover = None;
+                self.redraw();
+            }
             KeyCode::Digit1 if shift => self.zoom_to_fit(),
             KeyCode::Digit0 if shift || ctrl => {
                 let (w, h) = self.viewport();
@@ -331,6 +416,137 @@ impl App {
         }
     }
 
+    fn next_merge_key(&mut self) -> u64 {
+        self.merge_seq += 1;
+        self.merge_seq
+    }
+
+    /// Consecutive nudges share a merge key: one undo step per nudge sequence.
+    fn nudge(&mut self, delta: Vec2) {
+        if self.selection.is_empty() {
+            return;
+        }
+        let key = match self.nudge_key {
+            Some(k) => k,
+            None => {
+                let k = self.next_merge_key();
+                self.nudge_key = Some(k);
+                k
+            }
+        };
+        let ids = self.selection.ids().to_vec();
+        if let Err(e) = transform::nudge(&mut self.doc, &mut self.history, &ids, delta, key) {
+            eprintln!("nudge failed: {e}");
+        }
+        self.redraw();
+    }
+
+    fn undo(&mut self) {
+        match self.history.undo(&mut self.doc) {
+            Ok(true) => {
+                self.selection.retain_valid(&self.doc);
+                self.redraw();
+            }
+            Ok(false) => {}
+            Err(e) => eprintln!("undo failed: {e}"),
+        }
+    }
+
+    fn redo(&mut self) {
+        match self.history.redo(&mut self.doc) {
+            Ok(true) => {
+                self.selection.retain_valid(&self.doc);
+                self.redraw();
+            }
+            Ok(false) => {}
+            Err(e) => eprintln!("redo failed: {e}"),
+        }
+    }
+
+    fn gesture_modifiers(&self) -> Modifiers {
+        Modifiers {
+            shift: self.modifiers.shift_key(),
+            alt: self.modifiers.alt_key(),
+        }
+    }
+
+    /// Resize handle or rotation zone of the current selection under `device`.
+    fn pick_handle(&self, device: Point) -> Option<Pick> {
+        let quad = self.selection_box?;
+        let s = self.scale_factor();
+        let handles = ude_renderer::overlay::handle_points(&quad);
+        if let Some(i) = handles
+            .iter()
+            .position(|&h| (h - device).hypot() <= HANDLE_RADIUS * s)
+        {
+            return Some(Pick::Resize(i as HandleIndex));
+        }
+        let bounds = quad.iter().fold(
+            Rect::new(f64::MAX, f64::MAX, f64::MIN, f64::MIN),
+            |r, &p| r.union_pt(p),
+        );
+        let near_corner = [0, 2, 4, 6]
+            .iter()
+            .any(|&i| (handles[i] - device).hypot() <= ROTATE_RADIUS * s);
+        (near_corner && !bounds.contains(device)).then_some(Pick::Rotate)
+    }
+
+    /// Starts a resize/rotate (`pick`) or a move (`None`) of the selection at `start` (device).
+    fn begin_gesture(&mut self, pick: Option<Pick>, start: Point) {
+        let key = self.next_merge_key();
+        let start = self.doc_point(start);
+        let ids = self.selection.ids().to_vec();
+        let (gesture, snapper) = match pick {
+            Some(Pick::Resize(h)) => (Gesture::begin_resize(&self.doc, &ids, h, start, key), None),
+            Some(Pick::Rotate) => (Gesture::begin_rotate(&self.doc, &ids, start, key), None),
+            None => {
+                let snapper = self.index.as_ref().map(|index| {
+                    let (w, h) = self.viewport();
+                    let inv = self.camera.transform(self.scale_factor()).inverse();
+                    let visible = inv.transform_rect_bbox(Rect::new(0.0, 0.0, w, h));
+                    Snapper::new(&self.doc, index, &ids, visible, SNAP_PX / self.camera.zoom)
+                });
+                (Gesture::begin_move(&self.doc, &ids, start, key), snapper)
+            }
+        };
+        if !gesture.is_empty() {
+            self.drag = Some(Drag::Active { gesture, snapper });
+        }
+    }
+
+    fn drag_to(&mut self) {
+        let pointer = self.doc_point(self.cursor);
+        let mods = self.gesture_modifiers();
+        let Some(Drag::Active { gesture, snapper }) = &self.drag else {
+            return;
+        };
+        match gesture.update(
+            &mut self.doc,
+            &mut self.history,
+            pointer,
+            mods,
+            snapper.as_ref(),
+        ) {
+            Ok(feedback) => self.guides = feedback.guides,
+            Err(e) => eprintln!("transform failed: {e}"),
+        }
+        self.redraw();
+    }
+
+    fn end_drag(&mut self) {
+        self.drag = None;
+        self.guides.clear();
+        self.redraw();
+    }
+
+    fn cancel_drag(&mut self) {
+        if matches!(self.drag, Some(Drag::Active { .. })) {
+            // The gesture is one coalesced history entry; undoing it restores the start state.
+            self.undo();
+        }
+        self.end_drag();
+    }
+
     fn doc_point(&self, device: Point) -> Point {
         self.camera.transform(self.scale_factor()).inverse() * device
     }
@@ -353,6 +569,12 @@ impl App {
     }
 
     fn on_left_press(&mut self) {
+        self.nudge_key = None;
+        if let Some(pick) = self.pick_handle(self.cursor) {
+            self.begin_gesture(Some(pick), self.cursor);
+            self.redraw();
+            return;
+        }
         let now = Instant::now();
         let double = self.last_click.is_some_and(|(t, p)| {
             now.duration_since(t) < DOUBLE_CLICK && (p - self.cursor).hypot() < 4.0
@@ -371,10 +593,17 @@ impl App {
         }
 
         match self.target_at(self.cursor, self.mode()) {
-            Some(target) if self.modifiers.shift_key() => self.selection.toggle(target),
-            // Clicking an already-selected layer keeps the selection (M4 drags it).
-            Some(target) if self.selection.contains(target) => {}
-            Some(target) => self.selection.set([target]),
+            Some(target) => {
+                if self.modifiers.shift_key() {
+                    self.selection.toggle(target);
+                } else if !self.selection.contains(target) {
+                    self.selection.set([target]);
+                }
+                // Pressing on a selected layer arms a move; it starts past the drag threshold.
+                if self.selection.contains(target) {
+                    self.drag = Some(Drag::Pending { start: self.cursor });
+                }
+            }
             None => {
                 let base = if self.modifiers.shift_key() {
                     self.selection.ids().to_vec()
@@ -393,6 +622,40 @@ impl App {
             }
         }
         self.redraw();
+    }
+
+    fn on_left_release(&mut self) {
+        if self.marquee.take().is_some() {
+            self.redraw();
+        }
+        if self.drag.is_some() {
+            self.end_drag();
+        }
+        self.update_cursor();
+    }
+
+    fn on_cursor_moved(&mut self, delta: Vec2) {
+        if self.panning {
+            self.camera.pan += delta;
+            self.redraw();
+            return;
+        }
+        if let Some(Drag::Pending { start }) = self.drag {
+            if (self.cursor - start).hypot() >= DRAG_THRESHOLD * self.scale_factor() {
+                self.begin_gesture(None, start);
+                self.drag_to();
+                self.update_cursor();
+            }
+            return;
+        }
+        if self.drag.is_some() {
+            self.drag_to();
+        } else if self.marquee.is_some() {
+            self.update_marquee();
+        } else {
+            self.update_hover();
+            self.update_cursor();
+        }
     }
 
     fn update_marquee(&mut self) {
@@ -419,13 +682,28 @@ impl App {
         }
     }
 
-    fn update_cursor(&self) {
-        if let Some(w) = &self.window {
-            w.set_cursor(match (self.panning, self.space_down) {
-                (true, _) => CursorIcon::Grabbing,
-                (false, true) => CursorIcon::Grab,
-                _ => CursorIcon::Default,
-            });
+    fn update_cursor(&mut self) {
+        let icon = if self.panning {
+            CursorIcon::Grabbing
+        } else if self.space_down {
+            CursorIcon::Grab
+        } else if matches!(self.drag, Some(Drag::Active { .. })) {
+            self.cursor_icon
+        } else {
+            match self.pick_handle(self.cursor) {
+                Some(Pick::Resize(0 | 4)) => CursorIcon::NwseResize,
+                Some(Pick::Resize(2 | 6)) => CursorIcon::NeswResize,
+                Some(Pick::Resize(1 | 5)) => CursorIcon::NsResize,
+                Some(Pick::Resize(_)) => CursorIcon::EwResize,
+                Some(Pick::Rotate) => CursorIcon::Crosshair,
+                None => CursorIcon::Default,
+            }
+        };
+        if icon != self.cursor_icon
+            && let Some(w) = &self.window
+        {
+            w.set_cursor(icon);
+            self.cursor_icon = icon;
         }
     }
 }
@@ -474,7 +752,13 @@ impl ApplicationHandler for App {
             }
             WindowEvent::ScaleFactorChanged { .. } => self.redraw(),
             WindowEvent::RedrawRequested => self.render(event_loop),
-            WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
+            WindowEvent::ModifiersChanged(m) => {
+                self.modifiers = m.state();
+                // Modifiers change the gesture (axis lock, aspect ratio, from centre) mid-drag.
+                if matches!(self.drag, Some(Drag::Active { .. })) {
+                    self.drag_to();
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => self.on_key(&event),
             WindowEvent::MouseWheel { delta, .. } => {
                 let (dx, dy) = match delta {
@@ -507,11 +791,7 @@ impl ApplicationHandler for App {
                 } else if button == MouseButton::Left {
                     match state {
                         ElementState::Pressed => self.on_left_press(),
-                        ElementState::Released => {
-                            if self.marquee.take().is_some() {
-                                self.redraw();
-                            }
-                        }
+                        ElementState::Released => self.on_left_release(),
                     }
                 }
             }
@@ -519,14 +799,7 @@ impl ApplicationHandler for App {
                 let p = Point::new(position.x, position.y);
                 let delta = p - self.cursor;
                 self.cursor = p;
-                if self.panning {
-                    self.camera.pan += delta;
-                    self.redraw();
-                } else if self.marquee.is_some() {
-                    self.update_marquee();
-                } else {
-                    self.update_hover();
-                }
+                self.on_cursor_moved(delta);
             }
             WindowEvent::CursorLeft { .. } if self.hover.take().is_some() => self.redraw(),
             _ => {}

@@ -26,6 +26,8 @@ pub struct Overlay {
     /// Box carrying the resize handles (single selection: the node's quad; multiple: their bounds).
     pub selection_box: Option<Outline>,
     pub marquee: Option<Rect>,
+    /// Snap guide segments (device space).
+    pub guides: Vec<(Point, Point)>,
     /// Device pixels per logical pixel, so lines and handles keep their on-screen size.
     pub scale: f64,
 }
@@ -36,6 +38,7 @@ impl Overlay {
             && self.selected.is_empty()
             && self.selection_box.is_none()
             && self.marquee.is_none()
+            && self.guides.is_empty()
     }
 }
 
@@ -50,6 +53,17 @@ pub fn paint_overlay(o: &Overlay, p: &mut impl Painter) {
             &Geom::Rect(m),
             line,
             &BrushSpec::Solid(ACCENT),
+        );
+    }
+    for &(a, b) in &o.guides {
+        let mut path = BezPath::new();
+        path.move_to(a);
+        path.line_to(b);
+        p.stroke(
+            Affine::IDENTITY,
+            &Geom::Path(&path),
+            line,
+            &BrushSpec::Solid(COMPONENT),
         );
     }
     if let Some(h) = &o.hover {

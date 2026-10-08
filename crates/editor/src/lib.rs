@@ -1,6 +1,10 @@
-//! Editor logic independent of the UI: selection rules, hit resolution, and (from M4)
-//! transform tools and commands. See `docs/architecture.md` §5.
+//! Editor logic independent of the UI: selection rules, hit resolution, transform
+//! gestures, snapping and commands. See `docs/architecture.md` §5.
 
 pub mod selection;
+pub mod snap;
+pub mod transform;
 
-pub use selection::{Selection, SelectionMode, hit_test, marquee_select, resolve_target};
+pub use selection::{Selection, SelectionMode, drill, hit_test, marquee_select, resolve_target};
+pub use snap::{SnapResult, Snapper};
+pub use transform::{Feedback, Gesture, HandleIndex, Modifiers};

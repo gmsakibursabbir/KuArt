@@ -6,6 +6,19 @@
 
 mod hit;
 
+/// kurbo (f64) is used for editor math; the model stores compact f32 values.
+pub use kurbo;
+
+/// Core (f32) → kurbo (f64) transform.
+pub fn to_kurbo(a: &Affine) -> kurbo::Affine {
+    kurbo::Affine::new(a.0.map(f64::from))
+}
+
+/// kurbo (f64) → core (f32) transform.
+pub fn from_kurbo(a: kurbo::Affine) -> Affine {
+    Affine(a.as_coeffs().map(|v| v as f32))
+}
+
 pub use hit::{contains_point, paint_order_cmp};
 
 use std::collections::HashMap;

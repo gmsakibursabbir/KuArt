@@ -56,6 +56,7 @@ pub fn build_overlay(
         selected,
         selection_box,
         marquee: marquee.map(|m| Rect::from_points(view * m.start, view * m.current)),
+        guides: Vec::new(),
         scale,
     }
 }
