@@ -19,6 +19,7 @@
 mod backend;
 mod camera;
 mod selection_ui;
+mod tools;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,11 +29,13 @@ use backend::{Backend, FrameResult, UiFrame};
 use camera::Camera;
 use selection_ui::{Marquee, build_overlay};
 use ude_core::{Document, History, NodeId, NodeKind, Op, Transaction};
+use ude_editor::Tool;
 use ude_editor::transform::{self, Modifiers};
 use ude_editor::{
     Gesture, HandleIndex, Selection, SelectionMode, Snapper, drill, hit_test, marquee_select,
     resolve_target,
 };
+use ude_renderer::TextEngine;
 use ude_renderer::View;
 use ude_renderer::vello::kurbo::{Point, Rect, Vec2};
 use ude_renderer::vello::peniko::Color;
@@ -142,9 +145,13 @@ struct App {
     canvas: Rect,
     panel_hover: Option<NodeId>,
     applied_theme: Option<(ThemeChoice, bool)>,
+    text: TextEngine,
+    tool: Tool,
 }
 
 enum Drag {
+    /// Drawing a new layer with a creation tool.
+    Create(ude_editor::Create),
     /// Pressed on a selected layer; becomes a move once the pointer travels far enough.
     Pending { start: Point },
     Active {
@@ -192,6 +199,8 @@ impl App {
             canvas: Rect::ZERO,
             panel_hover: None,
             applied_theme: None,
+            text: TextEngine::default(),
+            tool: Tool::Move,
             index,
             selection: Selection::default(),
             hover: None,
@@ -281,12 +290,15 @@ impl App {
             self.applied_theme = Some((self.panels.theme, system_dark));
         }
         let renderer = self.backend.as_ref().map(Backend::name).unwrap_or_default();
+        let missing = self.text.missing_fonts();
         let status = Status {
             title: &self.title,
             zoom: self.camera.zoom,
             renderer: &renderer,
             can_undo: self.history.can_undo(),
             can_redo: self.history.can_redo(),
+            tool: self.tool,
+            missing_fonts: &missing,
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -339,6 +351,17 @@ impl App {
                         Ok(()) => self.history.commit(&mut self.doc, tx),
                         Err(e) => eprintln!("edit failed: {e}"),
                     }
+                }
+                Action::Tool(tool) => self.tool = tool,
+                Action::SetText {
+                    id,
+                    content,
+                    family,
+                    size,
+                    weight,
+                    merge_key,
+                } => {
+                    self.set_text(id, content, family, size, weight, merge_key);
                 }
                 Action::Undo => self.undo(),
                 Action::Redo => self.redo(),
@@ -415,7 +438,15 @@ impl App {
                 textures,
                 pixels_per_point: *pixels_per_point,
             });
-        match backend.render(&self.doc, page, &view, &overlay, bg, ui.as_ref()) {
+        match backend.render(
+            &self.doc,
+            page,
+            &view,
+            &overlay,
+            bg,
+            ui.as_ref(),
+            &mut self.text,
+        ) {
             Ok(FrameResult::Presented(stats)) => {
                 if self.options.stats {
                     window.set_title(&format!(
@@ -481,6 +512,16 @@ impl App {
             return;
         }
         self.nudge_key = None;
+        if !ctrl && let Some(tool) = tools::tool_for_key(code) {
+            self.tool = tool;
+            self.update_cursor();
+            return self.redraw();
+        }
+        if code == KeyCode::Escape && self.tool != Tool::Move {
+            self.tool = Tool::Move;
+            self.update_cursor();
+            return self.redraw();
+        }
         match code {
             KeyCode::KeyZ if ctrl && shift => self.redo(),
             KeyCode::KeyZ if ctrl => self.undo(),
@@ -643,6 +684,9 @@ impl App {
     }
 
     fn drag_to(&mut self) {
+        if matches!(self.drag, Some(Drag::Create(_))) {
+            return self.create_drag_to();
+        }
         let pointer = self.doc_point(self.cursor);
         let mods = self.gesture_modifiers();
         let Some(Drag::Active { gesture, snapper }) = &self.drag else {
@@ -668,7 +712,7 @@ impl App {
     }
 
     fn cancel_drag(&mut self) {
-        if matches!(self.drag, Some(Drag::Active { .. })) {
+        if matches!(self.drag, Some(Drag::Active { .. } | Drag::Create(_))) {
             // The gesture is one coalesced history entry; undoing it restores the start state.
             self.undo();
         }
@@ -698,6 +742,9 @@ impl App {
 
     fn on_left_press(&mut self) {
         self.nudge_key = None;
+        if self.tool != Tool::Move {
+            return self.begin_create();
+        }
         if let Some(pick) = self.pick_handle(self.cursor) {
             self.begin_gesture(Some(pick), self.cursor);
             self.redraw();
@@ -755,6 +802,9 @@ impl App {
     fn on_left_release(&mut self) {
         if self.marquee.take().is_some() {
             self.redraw();
+        }
+        if matches!(self.drag, Some(Drag::Create(_))) {
+            self.finish_create();
         }
         if self.drag.is_some() {
             self.end_drag();
@@ -817,6 +867,8 @@ impl App {
             CursorIcon::Grab
         } else if matches!(self.drag, Some(Drag::Active { .. })) {
             self.cursor_icon
+        } else if self.tool != Tool::Move {
+            CursorIcon::Crosshair
         } else {
             match self.pick_handle(self.cursor) {
                 Some(Pick::Resize(0 | 4)) => CursorIcon::NwseResize,

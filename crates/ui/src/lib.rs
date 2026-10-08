@@ -12,7 +12,7 @@ pub use theme::{ThemeChoice, Tokens};
 use egui::{Align, Layout, Panel, Rect, RichText, Ui};
 use inspector::Inspector;
 use ude_core::{Document, NodeId, Prop};
-use ude_editor::Selection;
+use ude_editor::{Selection, Tool};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
@@ -24,6 +24,16 @@ pub enum Action {
         value: Prop,
         merge_key: u64,
     },
+    /// Text edits; the app interns the family and re-measures auto-sized boxes.
+    SetText {
+        id: NodeId,
+        content: Option<String>,
+        family: Option<String>,
+        size: Option<f32>,
+        weight: Option<u16>,
+        merge_key: u64,
+    },
+    Tool(Tool),
     Undo,
     Redo,
     ZoomToFit,
@@ -36,6 +46,9 @@ pub struct Status<'a> {
     pub renderer: &'a str,
     pub can_undo: bool,
     pub can_redo: bool,
+    pub tool: Tool,
+    /// Font families used by the document but not installed.
+    pub missing_fonts: &'a [&'a str],
 }
 
 #[derive(Default)]
@@ -67,6 +80,17 @@ impl Panels {
                     ui.label(RichText::new("◆ KuArt").strong().color(t.accent));
                     ui.separator();
                     ui.colored_label(t.text_secondary, status.title);
+                    ui.separator();
+                    for tool in Tool::ALL {
+                        let hint = format!("{} ({})", tool.label(), tool.shortcut());
+                        if ui
+                            .selectable_label(status.tool == tool, tool.label())
+                            .on_hover_text(hint)
+                            .clicked()
+                        {
+                            actions.push(Action::Tool(tool));
+                        }
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         egui::ComboBox::from_id_salt("theme")
                             .selected_text(self.theme.label())
@@ -111,6 +135,11 @@ impl Panels {
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.colored_label(t.text_muted, status.renderer);
+                        if !status.missing_fonts.is_empty() {
+                            let list = status.missing_fonts.join(", ");
+                            ui.colored_label(t.warning, format!("⚠ Not installed: {list}"))
+                                .on_hover_text("Drawn with a fallback font. The original font name is kept when saving.");
+                        }
                     });
                 });
             });
@@ -175,6 +204,8 @@ mod tests {
             renderer: "cpu",
             can_undo: false,
             can_redo: false,
+            tool: ude_editor::Tool::Move,
+            missing_fonts: &[],
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

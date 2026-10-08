@@ -196,6 +196,8 @@ fn main() {
         "
 panels frame: {frame:.3} ms with {rows} layer rows expanded (target < 2 ms)"
     );
+    let (first, cached, drawn) = render_frame_ms(10_000);
+    println!("render 1280x800 @100% (CPU, real text): first {first:.1} ms, cached layouts {cached:.1} ms, {drawn} layers drawn");
 }
 
 struct SpatialRow {
@@ -279,6 +281,8 @@ pub fn panels_frame_ms(nodes: u32) -> (usize, f64) {
         renderer: "cpu",
         can_undo: false,
         can_redo: false,
+        tool: ude_editor::Tool::Move,
+        missing_fonts: &[],
     };
     let mut run = || {
         let input = egui::RawInput {
@@ -308,4 +312,29 @@ pub fn panels_frame_ms(nodes: u32) -> (usize, f64) {
         run();
     }
     (panels.layers.rows().len(), ms(t) / f64::from(FRAMES))
+}
+
+/// CPU render of a 1280×800 view at 100% zoom over the first artboard (real glyphs, not bars).
+/// Returns (first frame ms incl. text layout, cached frame ms, text layers drawn).
+pub fn render_frame_ms(nodes: u32) -> (f64, f64, u32) {
+    use ude_renderer::{CpuPainter, TextEngine, View, paint_page, vello::kurbo::Affine, vello_cpu};
+    let doc = generate(SynthSpec { nodes, seed: 42 });
+    let page = doc.children(doc.root())[0];
+    let (w, h) = (1280u16, 800u16);
+    let view = View { transform: Affine::IDENTITY, width: f64::from(w), height: f64::from(h) };
+    let mut cx = vello_cpu::RenderContext::new(w, h);
+    let mut resources = vello_cpu::Resources::new();
+    let mut pixmap = vello_cpu::Pixmap::new(w, h);
+    let mut text = TextEngine::default();
+    let mut frame = || {
+        cx.reset();
+        let t = Instant::now();
+        let stats = paint_page(&doc, page, &view, &mut CpuPainter { cx: &mut cx, resources: &mut resources }, &mut text);
+        cx.flush();
+        cx.render(&mut pixmap, &mut resources);
+        (ms(t), stats.drawn)
+    };
+    let (first, drawn) = frame();
+    let (cached, _) = frame();
+    (first, cached, drawn)
 }

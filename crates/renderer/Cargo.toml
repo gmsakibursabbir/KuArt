@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+parley = "0.11"
 ude-core = { path = "../core" }
 vello = "0.11"
 vello_cpu = { version = "0.3", features = ["multithreading"] }

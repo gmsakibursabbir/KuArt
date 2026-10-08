@@ -119,3 +119,10 @@ what the tile cache (rendering-strategy.md §7) is for.
 The CPU backend now caches the rendered document. Hover, selection and marquee changes
 recomposite overlays over the cached frame instead of re-rendering. Cost: one extra
 window-sized pixmap (4 MB at 1280×800). Private memory at launch is 26 MB with the 10k demo.
+
+## 2026-10-09 · M6 text
+
+`ude-bench`: CPU render of a 1280×800 view at 100% zoom over the 10k-node demo (real glyphs
+via parley + vello_cpu): **first frame 15.0 ms** (system font discovery + layout), **1.6 ms
+with cached layouts**. Text under 4 px on screen is still drawn as bars. App memory at launch
+unchanged (34 MB); fonts load lazily.

@@ -12,9 +12,11 @@
 pub mod convert;
 pub mod overlay;
 pub mod painter;
+pub mod text;
 
 pub use overlay::{Outline, Overlay, paint_overlay};
-pub use painter::{BrushSpec, Geom, Painter};
+pub use painter::{BrushSpec, CpuPainter, Geom, GlyphPos, Painter};
+pub use text::TextEngine;
 pub use {vello, vello_cpu};
 
 use ude_core::scene::NodeFlags;
@@ -25,6 +27,8 @@ use vello::peniko::{BlendMode, Fill};
 
 /// Nodes smaller than this on screen (in device pixels) are not drawn.
 const MIN_VISIBLE_PX: f64 = 0.5;
+/// Text smaller than this on screen is drawn as bars (unreadable anyway, and far cheaper).
+const GREEK_BELOW_PX: f64 = 4.0;
 
 /// Document-to-device mapping and the device-pixel viewport.
 #[derive(Clone, Copy, Debug)]
@@ -49,10 +53,12 @@ pub fn paint_page(
     page: NodeId,
     view: &View,
     painter: &mut impl Painter,
+    text: &mut TextEngine,
 ) -> FrameStats {
     let mut cx = Cx {
         doc,
         painter,
+        text,
         viewport: Rect::new(0.0, 0.0, view.width, view.height),
         stats: FrameStats::default(),
     };
@@ -65,6 +71,7 @@ pub fn paint_page(
 struct Cx<'a, P: Painter> {
     doc: &'a Document,
     painter: &'a mut P,
+    text: &'a mut TextEngine,
     viewport: Rect,
     stats: FrameStats,
 }
@@ -151,7 +158,23 @@ impl<P: Painter> Cx<'_, P> {
     fn fills(&mut self, n: &Node, transform: Affine, own: Option<&Shape>, alpha: f32) {
         let size = (f64::from(n.size.w), f64::from(n.size.h));
         match (&n.kind, own) {
-            (NodeKind::Text(text), _) => self.greeked_text(n, text, transform, alpha),
+            (NodeKind::Text(text), _) => {
+                let on_screen = text.styles.first().map_or(0.0, |s| f64::from(s.size))
+                    * transform.determinant().abs().sqrt();
+                if on_screen < GREEK_BELOW_PX {
+                    self.greeked_text(n, text, transform, alpha);
+                } else {
+                    self.text.draw(
+                        self.painter,
+                        text,
+                        &self.doc.strings,
+                        (n.size.w, n.size.h),
+                        transform,
+                        alpha,
+                    );
+                    self.stats.drawn += 1;
+                }
+            }
             (NodeKind::Raster { .. }, Some(g)) => {
                 let brush = BrushSpec::Solid(convert::placeholder(alpha));
                 self.painter
@@ -215,7 +238,7 @@ impl<P: Painter> Cx<'_, P> {
         }
     }
 
-    /// Placeholder text rendering (one bar per estimated line) until text shaping lands in M6.
+    /// Greeked text: one bar per estimated line, for text too small to read.
     fn greeked_text(
         &mut self,
         n: &Node,
@@ -406,10 +429,20 @@ mod tests {
             width: f64::from(w),
             height: f64::from(h),
         };
-        let stats = paint_page(doc, page, &view, &mut cx);
+        let mut resources = vello_cpu::Resources::new();
+        let stats = paint_page(
+            doc,
+            page,
+            &view,
+            &mut CpuPainter {
+                cx: &mut cx,
+                resources: &mut resources,
+            },
+            &mut TextEngine::default(),
+        );
         let mut pixmap = vello_cpu::Pixmap::new(w, h);
         cx.flush();
-        cx.render(&mut pixmap, &mut vello_cpu::Resources::new());
+        cx.render(&mut pixmap, &mut resources);
         (pixmap.data_as_u8_slice().to_vec(), stats)
     }
 
@@ -491,6 +524,44 @@ mod tests {
     }
 
     #[test]
+    fn text_draws_glyphs_and_reports_missing_fonts() {
+        let mut doc = Document::new();
+        let family = doc.strings.intern("NoSuchFont KuArt Test");
+        let style = ude_core::typography::TextStyle {
+            family,
+            weight: 400,
+            italic: false,
+            size: 24.0,
+            line_height: ude_core::typography::LineHeight::Auto,
+            letter_spacing: ude_core::typography::LetterSpacing::Normal,
+            decoration: ude_core::typography::TextDecoration::None,
+            case: ude_core::typography::TextCase::Original,
+            fills: Paints::new(vec![Paint::solid(Color::BLACK)]),
+        };
+        let text = ude_core::typography::TextData::plain("Hello", style);
+        let mut engine = TextEngine::default();
+        let (w, h) = engine.measure(&text, &doc.strings, 1000.0);
+        assert!(
+            w > 20.0 && h > 10.0,
+            "laid out with a fallback font: {w}x{h}"
+        );
+        assert_eq!(engine.missing_fonts(), vec!["NoSuchFont KuArt Test"]);
+
+        let root = doc.root();
+        let page = doc
+            .build_child(root, Node::new(NodeKind::Page, Symbol::EMPTY))
+            .unwrap();
+        let node = Node::new(NodeKind::Text(Box::new(text)), Symbol::EMPTY)
+            .with_transform(ude_core::Affine::translate(4.0, 4.0))
+            .with_size(w, h);
+        doc.build_child(page, node).unwrap();
+        let (px, stats) = render_cpu(&doc, page, 160, 48);
+        let inked = px.chunks_exact(4).filter(|p| p[3] > 128).count();
+        assert!(inked > 50, "glyph pixels drawn: {inked}");
+        assert_eq!(stats.drawn, 1);
+    }
+
+    #[test]
     fn overlay_draws_outline_and_handles() {
         let quad = [
             Point::new(10.0, 10.0),
@@ -509,10 +580,17 @@ mod tests {
             ..Default::default()
         };
         let mut cx = vello_cpu::RenderContext::new(64, 64);
-        paint_overlay(&overlay, &mut cx);
+        let mut resources = vello_cpu::Resources::new();
+        paint_overlay(
+            &overlay,
+            &mut CpuPainter {
+                cx: &mut cx,
+                resources: &mut resources,
+            },
+        );
         let mut pixmap = vello_cpu::Pixmap::new(64, 64);
         cx.flush();
-        cx.render(&mut pixmap, &mut vello_cpu::Resources::new());
+        cx.render(&mut pixmap, &mut resources);
         let px = pixmap.data_as_u8_slice();
         // Handle at the top-left corner is white; the box interior stays empty.
         assert_eq!(pixel(px, 64, 10, 10), [255, 255, 255, 255]);

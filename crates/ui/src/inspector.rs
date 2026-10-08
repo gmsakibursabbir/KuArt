@@ -1,8 +1,9 @@
 //! Inspector for the selected layer: position, size, rotation, radius, opacity.
 //! Each drag or text edit of a field is one undo step (shared merge key per session).
 
-use egui::{DragValue, Grid, Response, Ui};
-use ude_core::{Affine, Document, Prop, Size};
+use egui::{DragValue, Grid, Response, TextEdit, Ui};
+use ude_core::typography::TextData;
+use ude_core::{Affine, Document, NodeId, NodeKind, Prop, Size};
 use ude_editor::Selection;
 
 use crate::Action;
@@ -135,5 +136,82 @@ impl Inspector {
                 ui.end_row();
                 set(ko, Prop::Opacity((opacity / 100.0) as f32));
             });
+
+        if let NodeKind::Text(text) = &n.kind {
+            self.text_section(ui, doc, id, text, t, actions);
+        }
+    }
+
+    /// Text content and the first run's font. Editing content collapses rich runs to one style.
+    fn text_section(
+        &mut self,
+        ui: &mut Ui,
+        doc: &Document,
+        id: NodeId,
+        text: &TextData,
+        t: &Tokens,
+        actions: &mut Vec<Action>,
+    ) {
+        let Some(style) = text.styles.first() else {
+            return;
+        };
+        ui.add_space(12.0);
+        ui.label(
+            egui::RichText::new("TEXT")
+                .small()
+                .strong()
+                .color(t.text_muted),
+        );
+        ui.add_space(4.0);
+        let mut content = text.content.to_string();
+        let kc = self.edited(
+            &ui.add(
+                TextEdit::multiline(&mut content)
+                    .desired_rows(2)
+                    .desired_width(f32::INFINITY),
+            ),
+        );
+        let mut family = doc.strings.resolve(style.family).to_owned();
+        let (mut size, mut weight) = (f64::from(style.size), f64::from(style.weight));
+        let (kf, ks, kw) = Grid::new("text_style")
+            .num_columns(2)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                ui.colored_label(t.text_muted, "Font");
+                let kf = self.edited(&ui.add(TextEdit::singleline(&mut family)));
+                ui.end_row();
+                ui.colored_label(t.text_muted, "Size");
+                let ks = self.edited(
+                    &ui.add(
+                        DragValue::new(&mut size)
+                            .speed(0.5)
+                            .range(1.0..=1000.0)
+                            .max_decimals(1),
+                    ),
+                );
+                ui.end_row();
+                ui.colored_label(t.text_muted, "Weight");
+                let kw = self.edited(
+                    &ui.add(
+                        DragValue::new(&mut weight)
+                            .speed(4.0)
+                            .range(100.0..=900.0)
+                            .max_decimals(0),
+                    ),
+                );
+                ui.end_row();
+                (kf, ks, kw)
+            })
+            .inner;
+        if let Some(merge_key) = kc.or(kf).or(ks).or(kw) {
+            actions.push(Action::SetText {
+                id,
+                content: kc.map(|_| content),
+                family: kf.map(|_| family),
+                size: ks.map(|_| size as f32),
+                weight: kw.map(|_| weight.round() as u16),
+                merge_key,
+            });
+        }
     }
 }

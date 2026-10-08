@@ -135,12 +135,14 @@ impl History {
         ops.reverse();
         let incoming = Entry::new(tx.label, ops, tx.merge_key);
 
+        // Incoming property sets may join an entry that also attached nodes (create + drag):
+        // undo runs the newer sets first, then the older structural ops, which is the right order.
         let mergeable = incoming.merge_key.is_some()
             && incoming.only_sets()
             && self
                 .undo
                 .back()
-                .is_some_and(|top| top.merge_key == incoming.merge_key && top.only_sets());
+                .is_some_and(|top| top.merge_key == incoming.merge_key);
         if mergeable && let Some(top) = self.undo.back_mut() {
             // The older entry already restores the earliest value of each (node, prop).
             let known: HashSet<_> = top.ops.iter().filter_map(set_key).collect();

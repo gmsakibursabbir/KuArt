@@ -49,6 +49,7 @@ pub struct Tokens {
     pub text_muted: Color32,
     pub accent: Color32,
     pub accent_component: Color32,
+    pub warning: Color32,
 }
 
 const fn hex(v: u32) -> Color32 {
@@ -69,6 +70,7 @@ pub const DARK: Tokens = Tokens {
     text_muted: hex(0x8D94AF),
     accent: hex(0xA78BFA),
     accent_component: hex(0xF472B6),
+    warning: hex(0xFBBF24),
 };
 
 pub const LIGHT: Tokens = Tokens {
@@ -85,6 +87,7 @@ pub const LIGHT: Tokens = Tokens {
     text_muted: hex(0x5F6684),
     accent: hex(0x7C5CF0),
     accent_component: hex(0xDB2777),
+    warning: hex(0xB45309),
 };
 
 pub const HIGH_CONTRAST: Tokens = Tokens {
@@ -101,6 +104,7 @@ pub const HIGH_CONTRAST: Tokens = Tokens {
     text_muted: hex(0xEEF1FA),
     accent: hex(0xC4B5FD),
     accent_component: hex(0xF9A8D4),
+    warning: hex(0xFDE68A),
 };
 
 pub fn apply(ctx: &egui::Context, t: &Tokens) {

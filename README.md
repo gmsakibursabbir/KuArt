@@ -4,7 +4,9 @@ A native Rust design editor (no Electron, no browser engine) that opens, edits a
 Adobe XD, Photoshop, SVG and PDF designs in one GPU-accelerated canvas, with a built-in Dev Mode
 for CSS/HTML/Tailwind/React/Vue output. It is built to run well on older PCs with 8 GB of RAM.
 
-**Status: Milestone 5 done.** Kuduy-styled panels (layers, inspector, top and status bars, dark/light/system/high-contrast themes) around the canvas.
+**Status: Milestone 6 done.** Drawing tools (frame, rectangle, ellipse, polygon, star, line, text; V F R O P S L T) and real text rendering with missing-font warnings.
+
+M5: Kuduy-styled panels (layers, inspector, top and status bars, dark/light/system/high-contrast themes) around the canvas.
 
 M4: You can select layers (click, deep select, Shift multi-select,
 double-click into groups, marquee) and edit them: move with snapping, resize and rotate with

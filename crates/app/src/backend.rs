@@ -12,7 +12,9 @@ use ude_renderer::vello::util::{RenderContext, RenderSurface};
 use ude_renderer::vello::wgpu::{self, CurrentSurfaceTexture};
 use ude_renderer::vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 use ude_renderer::vello_cpu::{RasterizerSettings, TargetInit};
-use ude_renderer::{FrameStats, Overlay, View, paint_overlay, paint_page, vello_cpu};
+use ude_renderer::{
+    CpuPainter, FrameStats, Overlay, TextEngine, View, paint_overlay, paint_page, vello_cpu,
+};
 use winit::window::Window;
 
 /// egui output to draw over the canvas (CPU backend only; see `Backend::render`).
@@ -102,6 +104,7 @@ impl Backend {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         doc: &Document,
@@ -110,11 +113,12 @@ impl Backend {
         overlay: &Overlay,
         bg: Color,
         ui: Option<&UiFrame<'_>>,
+        text: &mut TextEngine,
     ) -> Result<FrameResult, String> {
         match self {
             // The GPU path has no egui renderer yet (egui-wgpu targets a different wgpu than vello).
-            Backend::Gpu(g) => g.render(doc, page, view, overlay, bg),
-            Backend::Cpu(c) => c.render(doc, page, view, overlay, bg, ui),
+            Backend::Gpu(g) => g.render(doc, page, view, overlay, bg, text),
+            Backend::Cpu(c) => c.render(doc, page, view, overlay, bg, ui, text),
         }
     }
 }
@@ -157,9 +161,10 @@ impl Gpu {
         view: &View,
         overlay: &Overlay,
         bg: Color,
+        text: &mut TextEngine,
     ) -> Result<FrameResult, String> {
         self.scene.reset();
-        let stats = paint_page(doc, page, view, &mut self.scene);
+        let stats = paint_page(doc, page, view, &mut self.scene, text);
         paint_overlay(overlay, &mut self.scene);
         let device = &self.context.devices[self.surface.dev_id];
         let (width, height) = (self.surface.config.width, self.surface.config.height);
@@ -231,6 +236,7 @@ impl Cpu {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render(
         &mut self,
         doc: &Document,
@@ -239,6 +245,7 @@ impl Cpu {
         overlay: &Overlay,
         bg: Color,
         ui: Option<&UiFrame<'_>>,
+        text: &mut TextEngine,
     ) -> Result<FrameResult, String> {
         let key = ContentKey {
             bg,
@@ -249,7 +256,16 @@ impl Cpu {
         };
         if self.content_key != Some(key) {
             self.cx.reset();
-            self.content_stats = paint_page(doc, page, view, &mut self.cx);
+            self.content_stats = paint_page(
+                doc,
+                page,
+                view,
+                &mut CpuPainter {
+                    cx: &mut self.cx,
+                    resources: &mut self.resources,
+                },
+                text,
+            );
             self.cx.flush();
             let settings = RasterizerSettings {
                 target_init: TargetInit::Clear(bg),
@@ -268,7 +284,13 @@ impl Cpu {
                 .data_as_u8_slice_mut()
                 .copy_from_slice(self.content.data_as_u8_slice());
             self.overlay_cx.reset();
-            paint_overlay(overlay, &mut self.overlay_cx);
+            paint_overlay(
+                overlay,
+                &mut CpuPainter {
+                    cx: &mut self.overlay_cx,
+                    resources: &mut self.resources,
+                },
+            );
             self.overlay_cx.flush();
             let settings = RasterizerSettings {
                 target_init: TargetInit::SrcOver,
