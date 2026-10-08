@@ -100,3 +100,22 @@ what the tile cache (rendering-strategy.md §7) is for.
 |---|---:|---:|---:|
 | Before (GPU, vello) | 16.3 ms | 138 MB | 642 MB |
 | After (CPU, vello_cpu) | 25.4 ms | 37 MB | 21 MB |
+
+## 2026-10-08 · M3 spatial index and selection
+
+`cargo run --release -p ude-bench` (spatial table, `target/bench/m3.json`): 2,000 random clicks
+(hit test + group-first selection rule) and 200 random 300×300 marquees per size.
+
+| nodes | index build ms | index MB | click avg µs | click max µs | marquee ms |
+|---:|---:|---:|---:|---:|---:|
+| 1,000 | 0.3 | 0.07 | 1.5 | 995.5¹ | 0.006 |
+| 10,000 | 4.7 | 0.92 | 1.3 | 12.3 | 0.010 |
+| 100,000 | 32.7 | 8.15 | 2.3 | 13.6 | 0.022 |
+
+¹ The first query warms caches. Steady-state maxima are ~10 µs.
+
+**Acceptance (< 1 ms at 100k): met.** Average 2.3 µs, worst 13.6 µs.
+
+The CPU backend now caches the rendered document. Hover, selection and marquee changes
+recomposite overlays over the cached frame instead of re-rendering. Cost: one extra
+window-sized pixmap (4 MB at 1280×800). Private memory at launch is 26 MB with the 10k demo.

@@ -1,0 +1,15 @@
+[package]
+name = "ude-spatial"
+description = "Spatial index (R-tree) and exact hit testing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kurbo = "0.13"
+rstar = "0.13"
+ude-core = { path = "../core" }
+
+[lints]
+workspace = true

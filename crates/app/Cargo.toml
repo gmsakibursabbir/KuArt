@@ -18,6 +18,8 @@ ude-bench = { path = "../benchmarks" }
 winit = "0.30"
 pollster = "1"
 softbuffer = "0.4"
+ude-spatial = { version = "0.0.1", path = "../spatial" }
+ude-editor = { version = "0.0.1", path = "../editor" }
 
 [lints]
 workspace = true

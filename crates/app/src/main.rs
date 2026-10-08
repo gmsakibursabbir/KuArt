@@ -6,19 +6,29 @@
 //! Controls: wheel = pan (Shift = horizontal), Ctrl+wheel / pinch = zoom at cursor,
 //! middle-drag or Space+drag = pan, Shift+1 = zoom to fit, Shift+0 / Ctrl+0 = 100%,
 //! Ctrl+= / Ctrl+- = zoom, F3 = frame stats in the title bar.
+//!
+//! Selection: click = select layer (group-first), Ctrl/Cmd+click = deep select,
+//! Shift+click = add/remove, double-click = enter group, drag on empty canvas = marquee,
+//! Esc = select parent / clear, Ctrl/Cmd+A = select all at the current level.
 
 mod backend;
 mod camera;
+mod selection_ui;
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use backend::{Backend, FrameResult};
 use camera::Camera;
+use selection_ui::{Marquee, build_overlay};
 use ude_core::{Document, NodeId, NodeKind};
+use ude_editor::{
+    Selection, SelectionMode, hit_test, marquee_select, resolve_target, selection::drill,
+};
 use ude_renderer::View;
 use ude_renderer::vello::kurbo::{Point, Rect, Vec2};
+use ude_spatial::SpatialIndex;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -100,15 +110,31 @@ struct App {
     space_down: bool,
     panning: bool,
     shown: bool,
+    index: Option<SpatialIndex>,
+    selection: Selection,
+    hover: Option<NodeId>,
+    marquee: Option<Marquee>,
+    last_click: Option<(Instant, Point)>,
 }
 
+/// Pointer tolerance for hit testing, in device pixels.
+const HIT_TOLERANCE_PX: f64 = 3.0;
+const DOUBLE_CLICK: Duration = Duration::from_millis(400);
+
 impl App {
-    fn new(options: Options, doc: Document, title: String) -> Self {
+    fn new(options: Options, mut doc: Document, title: String) -> Self {
         let page = doc.children(doc.root()).iter().copied().find(|&id| {
             doc.node(id)
                 .is_some_and(|n| matches!(n.kind, NodeKind::Page))
         });
+        let index = page.map(|p| SpatialIndex::build(&doc, p));
+        let _ = doc.take_changes();
         Self {
+            index,
+            selection: Selection::default(),
+            hover: None,
+            marquee: None,
+            last_click: None,
             options,
             doc,
             title,
@@ -175,18 +201,39 @@ impl App {
             self.fitted = true;
             self.zoom_to_fit();
         }
+        // Keep derived state in sync with document edits (none yet in M3; M4 adds tools).
+        let changes = self.doc.take_changes();
+        if let Some(index) = &mut self.index {
+            index.update(&self.doc, &changes);
+        }
+        if !changes.is_empty() {
+            self.selection.retain_valid(&self.doc);
+        }
+
         let (width, height) = self.viewport();
         let view = View {
             transform: self.camera.transform(window.scale_factor()),
             width,
             height,
         };
+        let overlay = match &self.index {
+            Some(index) => build_overlay(
+                &self.doc,
+                index,
+                view.transform,
+                window.scale_factor(),
+                &self.selection,
+                self.hover,
+                self.marquee.as_ref(),
+            ),
+            None => Default::default(),
+        };
         let Some(backend) = self.backend.as_mut() else {
             return;
         };
 
         let started = Instant::now();
-        match backend.render(&self.doc, page, &view) {
+        match backend.render(&self.doc, page, &view, &overlay) {
             Ok(FrameResult::Presented(stats)) => {
                 if self.options.stats {
                     window.set_title(&format!(
@@ -243,6 +290,34 @@ impl App {
             }
             KeyCode::Equal | KeyCode::NumpadAdd if ctrl => self.zoom_center(2.0),
             KeyCode::Minus | KeyCode::NumpadSubtract if ctrl => self.zoom_center(0.5),
+            KeyCode::Escape => {
+                // Select the parents of the selection; at the top level, clear it.
+                let page = self.page;
+                let parents: Vec<NodeId> = self
+                    .selection
+                    .ids()
+                    .iter()
+                    .filter_map(|&id| self.doc.node(id).and_then(|n| n.parent))
+                    .filter(|&p| Some(p) != page)
+                    .collect();
+                self.selection.set(parents);
+                self.redraw();
+            }
+            KeyCode::KeyA if ctrl => {
+                // All layers at the level of the current selection (or the page's top level).
+                let parent = self
+                    .selection
+                    .ids()
+                    .first()
+                    .and_then(|&id| self.doc.node(id))
+                    .and_then(|n| n.parent)
+                    .or(self.page);
+                if let Some(parent) = parent {
+                    let all: Vec<NodeId> = self.doc.children(parent).to_vec();
+                    self.selection.set(all);
+                }
+                self.redraw();
+            }
             KeyCode::F3 => {
                 self.options.stats = !self.options.stats;
                 if !self.options.stats
@@ -253,6 +328,94 @@ impl App {
                 self.redraw();
             }
             _ => {}
+        }
+    }
+
+    fn doc_point(&self, device: Point) -> Point {
+        self.camera.transform(self.scale_factor()).inverse() * device
+    }
+
+    /// The layer a click at `device` would select (applying the selection rules).
+    fn target_at(&self, device: Point, mode: SelectionMode) -> Option<NodeId> {
+        let (index, page) = (self.index.as_ref()?, self.page?);
+        let p = self.doc_point(device);
+        let tolerance = HIT_TOLERANCE_PX / (self.camera.zoom * self.scale_factor());
+        let hit = hit_test(&self.doc, index, p.x, p.y, tolerance)?;
+        resolve_target(&self.doc, page, hit, mode)
+    }
+
+    fn mode(&self) -> SelectionMode {
+        if self.modifiers.control_key() || self.modifiers.super_key() {
+            SelectionMode::Deep
+        } else {
+            SelectionMode::GroupFirst
+        }
+    }
+
+    fn on_left_press(&mut self) {
+        let now = Instant::now();
+        let double = self.last_click.is_some_and(|(t, p)| {
+            now.duration_since(t) < DOUBLE_CLICK && (p - self.cursor).hypot() < 4.0
+        });
+        self.last_click = Some((now, self.cursor));
+
+        // Double-click on a selected container drills one level towards the pointer.
+        if double
+            && let [current] = self.selection.ids()
+            && let Some(deep) = self.target_at(self.cursor, SelectionMode::Deep)
+            && let Some(next) = drill(&self.doc, *current, deep)
+        {
+            self.selection.set([next]);
+            self.redraw();
+            return;
+        }
+
+        match self.target_at(self.cursor, self.mode()) {
+            Some(target) if self.modifiers.shift_key() => self.selection.toggle(target),
+            // Clicking an already-selected layer keeps the selection (M4 drags it).
+            Some(target) if self.selection.contains(target) => {}
+            Some(target) => self.selection.set([target]),
+            None => {
+                let base = if self.modifiers.shift_key() {
+                    self.selection.ids().to_vec()
+                } else {
+                    Vec::new()
+                };
+                if !self.modifiers.shift_key() {
+                    self.selection.clear();
+                }
+                let start = self.doc_point(self.cursor);
+                self.marquee = Some(Marquee {
+                    start,
+                    current: start,
+                    base,
+                });
+            }
+        }
+        self.redraw();
+    }
+
+    fn update_marquee(&mut self) {
+        let current = self.doc_point(self.cursor);
+        let mode = self.mode();
+        let (Some(m), Some(index)) = (self.marquee.as_mut(), self.index.as_ref()) else {
+            return;
+        };
+        m.current = current;
+        let hits = marquee_select(&self.doc, index, m.doc_rect(), mode);
+        self.selection.set(m.base.iter().copied().chain(hits));
+        self.redraw();
+    }
+
+    fn update_hover(&mut self) {
+        let hover = if self.panning || self.space_down {
+            None
+        } else {
+            self.target_at(self.cursor, self.mode())
+        };
+        if hover != self.hover {
+            self.hover = hover;
+            self.redraw();
         }
     }
 
@@ -341,16 +504,31 @@ impl ApplicationHandler for App {
                 if pan_button {
                     self.panning = state == ElementState::Pressed;
                     self.update_cursor();
+                } else if button == MouseButton::Left {
+                    match state {
+                        ElementState::Pressed => self.on_left_press(),
+                        ElementState::Released => {
+                            if self.marquee.take().is_some() {
+                                self.redraw();
+                            }
+                        }
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Point::new(position.x, position.y);
-                if self.panning {
-                    self.camera.pan += p - self.cursor;
-                    self.redraw();
-                }
+                let delta = p - self.cursor;
                 self.cursor = p;
+                if self.panning {
+                    self.camera.pan += delta;
+                    self.redraw();
+                } else if self.marquee.is_some() {
+                    self.update_marquee();
+                } else {
+                    self.update_hover();
+                }
             }
+            WindowEvent::CursorLeft { .. } if self.hover.take().is_some() => self.redraw(),
             _ => {}
         }
     }

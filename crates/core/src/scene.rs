@@ -335,6 +335,16 @@ impl Node {
             .map_or([self.corner_radius; 4], |c| c.radii)
     }
 
+    /// How far the node can paint outside its box (strokes, shadows, blurs), in local units.
+    /// Used for culling, dirty regions and the spatial index.
+    pub fn paint_outset(&self) -> f32 {
+        self.ext.as_ref().map_or(0.0, |e| {
+            let stroke = e.strokes.as_ref().map_or(0.0, |s| s.width);
+            let fx = e.effects.iter().map(Effect::outset).fold(0.0, f32::max);
+            stroke + fx
+        })
+    }
+
     pub fn is_visible(&self) -> bool {
         self.flags.contains(NodeFlags::VISIBLE)
     }

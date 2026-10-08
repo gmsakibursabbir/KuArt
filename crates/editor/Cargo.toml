@@ -1,0 +1,14 @@
+[package]
+name = "ude-editor"
+description = "Editor logic: selection, hit resolution, tools and commands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ude-core = { path = "../core" }
+ude-spatial = { path = "../spatial" }
+
+[lints]
+workspace = true

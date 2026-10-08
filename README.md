@@ -4,7 +4,10 @@ A native Rust design editor (no Electron, no browser engine) that opens, edits a
 Adobe XD, Photoshop, SVG and PDF designs in one GPU-accelerated canvas, with a built-in Dev Mode
 for CSS/HTML/Tailwind/React/Vue output. It is built to run well on older PCs with 8 GB of RAM.
 
-**Status: Milestone 2 done.** A native window renders documents with a multithreaded CPU renderer by
+**Status: Milestone 3 done.** You can select layers (click, deep select, Shift multi-select,
+double-click into groups, marquee), with hover and selection overlays.
+
+Before that, M2 delivered the canvas: A native window renders documents with a multithreaded CPU renderer by
 default (about 21 MB for a 10k-node document), or on the GPU with `--gpu`. It supports pan/zoom and
 uses zero CPU while idle. Underneath sit the scene graph,
 undo/redo, the native `.design` format, a headless CLI and benchmarks. Editing tools come next (M3+).

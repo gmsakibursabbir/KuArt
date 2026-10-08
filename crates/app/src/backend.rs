@@ -1,16 +1,17 @@
-//! Presentation backends: GPU (vello on wgpu) with automatic CPU fallback
-//! (vello_cpu + softbuffer) for adapters without compute shaders or broken drivers.
+//! Presentation backends: CPU (vello_cpu + softbuffer, the default) and GPU (vello on wgpu,
+//! opt-in, falling back to the CPU on failure). The CPU backend caches the rendered document
+//! so overlay-only changes (hover, selection, marquee) just recomposite.
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ude_core::{Document, NodeId};
-use ude_renderer::vello::kurbo::{Affine, Rect};
-use ude_renderer::vello::peniko::{Color, Fill};
+use ude_renderer::vello::peniko::Color;
 use ude_renderer::vello::util::{RenderContext, RenderSurface};
 use ude_renderer::vello::wgpu::{self, CurrentSurfaceTexture};
 use ude_renderer::vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
-use ude_renderer::{BrushSpec, FrameStats, Geom, Painter, View, paint_page, vello_cpu};
+use ude_renderer::vello_cpu::{RasterizerSettings, TargetInit};
+use ude_renderer::{FrameStats, Overlay, View, paint_overlay, paint_page, vello_cpu};
 use winit::window::Window;
 
 /// `bg.canvas` from docs/ui-design-system.md.
@@ -32,8 +33,23 @@ pub struct Gpu {
 pub struct Cpu {
     surface: softbuffer::Surface<Arc<Window>, Arc<Window>>,
     cx: vello_cpu::RenderContext,
-    pixmap: vello_cpu::Pixmap,
+    /// Rendered document; reused while only overlays change (hover, selection, marquee).
+    content: vello_cpu::Pixmap,
+    content_key: Option<ContentKey>,
+    content_stats: FrameStats,
+    /// Content + overlays, the frame actually presented.
+    frame: vello_cpu::Pixmap,
+    overlay_cx: vello_cpu::RenderContext,
     resources: vello_cpu::Resources,
+}
+
+/// Everything the rendered document depends on; any change re-renders the content.
+#[derive(Clone, Copy, PartialEq)]
+struct ContentKey {
+    revision: u64,
+    page: NodeId,
+    transform: [f64; 6],
+    size: (u16, u16),
 }
 
 pub enum FrameResult {
@@ -71,7 +87,10 @@ impl Backend {
                 }
                 let (cw, ch) = (clamp_u16(w), clamp_u16(h));
                 c.cx = vello_cpu::RenderContext::new(cw, ch);
-                c.pixmap = vello_cpu::Pixmap::new(cw, ch);
+                c.overlay_cx = vello_cpu::RenderContext::new(cw, ch);
+                c.content = vello_cpu::Pixmap::new(cw, ch);
+                c.frame = vello_cpu::Pixmap::new(cw, ch);
+                c.content_key = None;
             }
         }
     }
@@ -81,10 +100,11 @@ impl Backend {
         doc: &Document,
         page: NodeId,
         view: &View,
+        overlay: &Overlay,
     ) -> Result<FrameResult, String> {
         match self {
-            Backend::Gpu(g) => g.render(doc, page, view),
-            Backend::Cpu(c) => c.render(doc, page, view),
+            Backend::Gpu(g) => g.render(doc, page, view, overlay),
+            Backend::Cpu(c) => c.render(doc, page, view, overlay),
         }
     }
 }
@@ -120,9 +140,16 @@ impl Gpu {
         })
     }
 
-    fn render(&mut self, doc: &Document, page: NodeId, view: &View) -> Result<FrameResult, String> {
+    fn render(
+        &mut self,
+        doc: &Document,
+        page: NodeId,
+        view: &View,
+        overlay: &Overlay,
+    ) -> Result<FrameResult, String> {
         self.scene.reset();
         let stats = paint_page(doc, page, view, &mut self.scene);
+        paint_overlay(overlay, &mut self.scene);
         let device = &self.context.devices[self.surface.dev_id];
         let (width, height) = (self.surface.config.width, self.surface.config.height);
         self.renderer
@@ -183,36 +210,70 @@ impl Cpu {
         Ok(Self {
             surface,
             cx: vello_cpu::RenderContext::new(cw, ch),
-            pixmap: vello_cpu::Pixmap::new(cw, ch),
+            content: vello_cpu::Pixmap::new(cw, ch),
+            content_key: None,
+            content_stats: FrameStats::default(),
+            frame: vello_cpu::Pixmap::new(cw, ch),
+            overlay_cx: vello_cpu::RenderContext::new(cw, ch),
             resources: vello_cpu::Resources::new(),
         })
     }
 
-    fn render(&mut self, doc: &Document, page: NodeId, view: &View) -> Result<FrameResult, String> {
-        let (w, h) = (self.cx.width(), self.cx.height());
-        self.cx.reset();
-        let bg = Rect::new(0.0, 0.0, f64::from(w), f64::from(h));
-        self.cx.fill(
-            Affine::IDENTITY,
-            &Geom::Rect(bg),
-            Fill::NonZero,
-            &BrushSpec::Solid(CANVAS_BG),
-            None,
-        );
-        let stats = paint_page(doc, page, view, &mut self.cx);
-        self.cx.flush();
-        self.cx.render(&mut self.pixmap, &mut self.resources);
+    fn render(
+        &mut self,
+        doc: &Document,
+        page: NodeId,
+        view: &View,
+        overlay: &Overlay,
+    ) -> Result<FrameResult, String> {
+        let key = ContentKey {
+            revision: doc.revision(),
+            page,
+            transform: view.transform.as_coeffs(),
+            size: (self.cx.width(), self.cx.height()),
+        };
+        if self.content_key != Some(key) {
+            self.cx.reset();
+            self.content_stats = paint_page(doc, page, view, &mut self.cx);
+            self.cx.flush();
+            let settings = RasterizerSettings {
+                target_init: TargetInit::Clear(CANVAS_BG),
+                ..Default::default()
+            };
+            self.cx
+                .render_with(&mut self.content, &mut self.resources, settings);
+            self.content_key = Some(key);
+        }
+
+        // Overlays only: copy the cached content and composite the overlay over it.
+        let shown = if overlay.is_empty() {
+            &self.content
+        } else {
+            self.frame
+                .data_as_u8_slice_mut()
+                .copy_from_slice(self.content.data_as_u8_slice());
+            self.overlay_cx.reset();
+            paint_overlay(overlay, &mut self.overlay_cx);
+            self.overlay_cx.flush();
+            let settings = RasterizerSettings {
+                target_init: TargetInit::SrcOver,
+                ..Default::default()
+            };
+            self.overlay_cx
+                .render_with(&mut self.frame, &mut self.resources, settings);
+            &self.frame
+        };
 
         let mut buffer = self.surface.buffer_mut().map_err(|e| e.to_string())?;
         // Opaque background, so premultiplied RGBA equals straight RGBA here.
         for (dst, px) in buffer
             .iter_mut()
-            .zip(self.pixmap.data_as_u8_slice().chunks_exact(4))
+            .zip(shown.data_as_u8_slice().chunks_exact(4))
         {
             *dst = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
         }
         buffer.present().map_err(|e| e.to_string())?;
-        Ok(FrameResult::Presented(stats))
+        Ok(FrameResult::Presented(self.content_stats))
     }
 }
 

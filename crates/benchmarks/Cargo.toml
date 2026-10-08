@@ -9,7 +9,9 @@ publish = false
 
 [dependencies]
 ude-core = { path = "../core" }
+ude-editor = { version = "0.0.1", path = "../editor" }
 ude-format-native = { path = "../formats/native" }
+ude-spatial = { version = "0.0.1", path = "../spatial" }
 
 [lints]
 workspace = true

@@ -10,8 +10,10 @@
 //! until M7, and masks are skipped until phase 2.
 
 pub mod convert;
+pub mod overlay;
 pub mod painter;
 
+pub use overlay::{Outline, Overlay, paint_overlay};
 pub use painter::{BrushSpec, Geom, Painter};
 pub use {vello, vello_cpu};
 
@@ -84,7 +86,7 @@ impl<P: Painter> Cx<'_, P> {
         // Only leaves and clipping containers have reliable bounds; other containers
         // (groups) may have children outside their own box.
         if leaf || clips {
-            let outset = outset(n);
+            let outset = f64::from(n.paint_outset());
             let bounds =
                 transform.transform_rect_bbox(Rect::new(-outset, -outset, w + outset, h + outset));
             if !bounds.overlaps(self.viewport)
@@ -255,19 +257,6 @@ impl<P: Painter> Cx<'_, P> {
         }
         self.stats.drawn += 1;
     }
-}
-
-/// How far a node can paint outside its box (strokes, shadows, blurs).
-fn outset(n: &Node) -> f64 {
-    n.ext.as_ref().map_or(0.0, |e| {
-        let stroke = e.strokes.as_ref().map_or(0.0, |s| f64::from(s.width));
-        let fx = e
-            .effects
-            .iter()
-            .map(|f| f64::from(f.outset()))
-            .fold(0.0, f64::max);
-        stroke + fx
-    })
 }
 
 enum ShapeKind {
@@ -499,6 +488,41 @@ mod tests {
         let (px, stats) = render_cpu(&doc, page, 16, 16);
         assert!(px.iter().all(|&b| b == 0));
         assert_eq!(stats.drawn, 0);
+    }
+
+    #[test]
+    fn overlay_draws_outline_and_handles() {
+        let quad = [
+            Point::new(10.0, 10.0),
+            Point::new(50.0, 10.0),
+            Point::new(50.0, 40.0),
+            Point::new(10.0, 40.0),
+        ];
+        let outline = Outline {
+            quad,
+            component: false,
+        };
+        let overlay = Overlay {
+            selected: vec![outline],
+            selection_box: Some(outline),
+            scale: 1.0,
+            ..Default::default()
+        };
+        let mut cx = vello_cpu::RenderContext::new(64, 64);
+        paint_overlay(&overlay, &mut cx);
+        let mut pixmap = vello_cpu::Pixmap::new(64, 64);
+        cx.flush();
+        cx.render(&mut pixmap, &mut vello_cpu::Resources::new());
+        let px = pixmap.data_as_u8_slice();
+        // Handle at the top-left corner is white; the box interior stays empty.
+        assert_eq!(pixel(px, 64, 10, 10), [255, 255, 255, 255]);
+        assert_eq!(pixel(px, 64, 30, 25), [0, 0, 0, 0]);
+        // Edge between handles carries the accent colour.
+        let edge = pixel(px, 64, 20, 10);
+        assert!(
+            edge[3] > 0 && edge[2] > edge[1],
+            "violet outline, got {edge:?}"
+        );
     }
 
     #[test]
