@@ -22,3 +22,8 @@ Not installed: caveman's `caveman-compress` (runs bundled Python that calls Clau
 Not installed from impeccable: `scripts/` (launcher that downloads and runs a native binary, browser JS) and its
 `.claude/settings.json` hooks (run that launcher after every edit). The skill falls back to reading PRODUCT.md /
 DESIGN.md directly; `live`, `generate`, `pin` and `hooks` commands will not work.
+
+| graphify (Windows variant of the skill + Claude references) | https://github.com/Graphify-Labs/graphify | `6478eb7` |
+
+graphify needs its Python CLI (`graphifyy` on PyPI), installed by the user. Its `graphify claude install` step
+(CLAUDE.md section + PreToolUse hook) was not run.
