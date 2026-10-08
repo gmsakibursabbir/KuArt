@@ -1,0 +1,23 @@
+[package]
+name = "ude-app"
+description = "KuArt desktop application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "design-editor"
+path = "src/main.rs"
+
+[dependencies]
+ude-core = { path = "../core" }
+ude-renderer = { path = "../renderer" }
+ude-format-native = { path = "../formats/native" }
+ude-bench = { path = "../benchmarks" }
+winit = "0.30"
+pollster = "1"
+softbuffer = "0.4"
+
+[lints]
+workspace = true

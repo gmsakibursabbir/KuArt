@@ -29,3 +29,39 @@ arrive with the GUI in M13.
   * `Document::shrink_to_fit()` after load.
 * **After:** 215 B/node (22.6 MB). About half is real content (vector path points, text). The
   remainder is the node slot (128 B) plus the child-list entry.
+
+## 2026-10-08 · M2 first canvas measurements
+
+Machine: Windows 10 Pro, NVIDIA GTX 1050 Ti (the spec's reference GPU class), release build,
+1280×800 window, synthetic 10k-node demo zoomed to fit (every node on screen: the worst case for
+direct rendering). Frame time is CPU-side (scene encoding + submit), read from the `--stats` title.
+
+| Backend | Frame | Working set | Private bytes |
+|---|---:|---:|---:|
+| GPU · Vulkan, 10k nodes | 16.3 ms | 138 MB | 642 MB |
+| GPU · Vulkan, empty document | 1.3 ms | 131 MB | 633 MB |
+| GPU · DX12, empty document | — | 218 MB | 517 MB |
+| GPU · GL, empty document | — | 138 MB | 543 MB |
+| CPU (`vello_cpu`, multithreaded), 10k nodes | 24.3 ms | 28 MB | 20 MB |
+
+* **Idle:** 0 ms CPU time over 3 s with the window open. Event-driven rendering works.
+* **Traversal:** 10,000 visited, 8,884 drawn, 132 culled in the fit-all view. Zoomed in, culling
+  removes most work. The R-tree (M3) will also skip the traversal of off-screen subtrees.
+
+### Open issue: GPU-path committed memory (≈520–640 MB private)
+
+It is independent of the document (an empty document costs the same) and appears on all three
+wgpu backends. So it comes from the GPU stack, either driver allocations or vello's
+renderer/buffer setup, not from our model. The working set (115–220 MB) is much lower than
+private bytes, so much of it is committed but not resident. That still counts against
+low-memory machines.
+
+Plan: break it down in M13 with the diagnostics build (per-step measurements: device creation →
+`vello::Renderer` → first render → steady state). Then evaluate:
+1. Vello renderer options / bump-buffer sizing.
+2. A lighter GPU path for weak machines.
+3. Making the CPU renderer the default when the GPU stack's cost exceeds its benefit. At 20 MB
+   private and 24 ms for a worst-case 10k frame, it is already viable for normal documents.
+
+The user-facing budget in memory-strategy.md (empty app 40–80 MB) is **not met on the GPU path
+yet**, and is met on the CPU path.

@@ -9,8 +9,8 @@ green. Status is updated in this file as milestones land.
 |---|---|---|---|---|
 | M0 | Core model | workspace, `ude-core`: arena, ids, interner, geometry, paints, nodes, assets, ops, history with coalescing and byte budget, memory report | unit tests; `Node` ≤ 128 B | **done** |
 | M1 | Native format + CLI skeleton | `ude-format-native` (`.design` v0: chunked, varint encoding, zstd, blake3), `design-editor-cli inspect/convert/generate`, `ude-bench` synthetic generator + benchmark | round-trip is byte-identical; 100k-node doc saves/loads; deterministic output | **done**: 100k nodes save 219 ms / load 146 ms, 215 B/node (see [perf-log.md](perf-log.md)) |
-| M2 | GPU canvas | `ude-app` window (winit + wgpu + vello): render shapes, paths, solid fills; pan/zoom; idle = no frames; CPU fallback backend | 10k rects pan at 60 FPS on machine A; idle CPU < 0.5% | next |
-| M3 | Spatial index + selection | R-tree, hit testing, click/marquee/multi-select, overlays | select under the cursor in < 1 ms at 100k nodes | |
+| M2 | GPU canvas | `ude-app` window (winit + wgpu + vello): render shapes, paths, solid fills; pan/zoom; idle = no frames; CPU fallback backend | 10k rects pan at 60 FPS on machine A; idle CPU < 0.5% | **done, with one open issue**: GPU 16 ms / CPU 24 ms for a worst-case 10k frame, idle 0% CPU. GPU-path committed memory is ~600 MB, tracked in [perf-log.md](perf-log.md) |
+| M3 | Spatial index + selection | R-tree, hit testing, click/marquee/multi-select, overlays | select under the cursor in < 1 ms at 100k nodes | next |
 | M4 | Transform tools | move/resize/rotate with handles, Shift/Alt modifiers, basic snapping, undo/redo wired to the UI | drag coalesces into one undo entry | |
 | M5 | Panels | egui shell styled per [ui-design-system.md](ui-design-system.md) (Kuduy tokens, Inter + JetBrains Mono bundled): toolbar, virtualized layers panel, basic inspector, dark/light/system/high-contrast | 100k layers: panel frame < 2 ms; token contrast test passes AA | |
 | M6 | Shape & text tools | rect/ellipse/polygon/line/frame tools; text via parley; missing font warnings | text renders identically on GPU and CPU backends (golden) | |
