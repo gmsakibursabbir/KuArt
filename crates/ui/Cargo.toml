@@ -1,0 +1,15 @@
+[package]
+name = "ude-ui"
+description = "Editor panels (egui): theme, layers, inspector, bars"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+egui = { version = "0.34", default-features = false, features = ["default_fonts"] }
+ude-core = { path = "../core" }
+ude-editor = { path = "../editor" }
+
+[lints]
+workspace = true

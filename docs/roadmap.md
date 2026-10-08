@@ -13,8 +13,8 @@ green. Status is updated in this file as milestones land.
 | M3 | Spatial index + selection | R-tree, hit testing, click/marquee/multi-select, overlays | select under the cursor in < 1 ms at 100k nodes | **done**: 2.3 µs avg / 13.6 µs worst at 100k ([perf-log.md](perf-log.md)) |
 | M4 | Transform tools | move/resize/rotate with handles, Shift/Alt modifiers, basic snapping, undo/redo wired to the UI | drag coalesces into one undo entry | **done**: unit-tested (50-move drag = 1 undo entry); interactive check pending |
 
-| M5 | Panels | egui shell styled per [ui-design-system.md](ui-design-system.md) (Kuduy tokens, Inter + JetBrains Mono bundled): toolbar, virtualized layers panel, basic inspector, dark/light/system/high-contrast | 100k layers: panel frame < 2 ms; token contrast test passes AA | next |
-| M6 | Shape & text tools | rect/ellipse/polygon/line/frame tools; text via parley; missing font warnings | text renders identically on GPU and CPU backends (golden) | |
+| M5 | Panels | egui shell styled per [ui-design-system.md](ui-design-system.md) (Kuduy tokens, Inter + JetBrains Mono bundled): toolbar, virtualized layers panel, basic inspector, dark/light/system/high-contrast | 100k layers: panel frame < 2 ms; token contrast test passes AA | **done**: panels frame 0.098 ms with 60k rows; AA contrast test passes; CPU renderer only; app 34 MB private |
+| M6 | Shape & text tools | rect/ellipse/polygon/line/frame tools; text via parley; missing font warnings | text renders identically on GPU and CPU backends (golden) | next |
 | M7 | Images | asset store, lazy scaled decode, image cache + texture LRU | 6000×4000 shown at 300×200 holds ≤ 1 MB decoded | |
 | M8 | Export | PNG (CPU backend) and SVG writer | golden-image tests | |
 | M9 | SVG import | `usvg` mapping | W3C SVG subset corpus ≥ 90% at SSIM ≥ 0.98 | |

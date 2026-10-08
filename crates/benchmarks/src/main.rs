@@ -190,6 +190,12 @@ fn main() {
     if std::fs::write(dir.join("m3.json"), json).is_ok() {
         println!("wrote target/bench/m3.json");
     }
+
+    let (rows, frame) = panels_frame_ms(*sizes.last().unwrap_or(&100_000));
+    println!(
+        "
+panels frame: {frame:.3} ms with {rows} layer rows expanded (target < 2 ms)"
+    );
 }
 
 struct SpatialRow {
@@ -253,4 +259,53 @@ fn spatial(nodes: u32) -> SpatialRow {
         hit_max_us: max,
         marquee_ms,
     }
+}
+
+/// M5 acceptance: one panels frame (layers + inspector + bars) at 100k layers, headless.
+/// Every artboard is expanded so the layers list holds all rows: the worst case.
+pub fn panels_frame_ms(nodes: u32) -> (usize, f64) {
+    use ude_ui::{Panels, Status, egui};
+    let doc = generate(SynthSpec { nodes, seed: 42 });
+    let page = doc.children(doc.root())[0];
+    let mut panels = Panels::default();
+    for &frame in doc.children(page) {
+        panels.layers.toggle(frame);
+    }
+    let ctx = egui::Context::default();
+    let selection = ude_editor::Selection::default();
+    let status = Status {
+        title: "bench",
+        zoom: 1.0,
+        renderer: "cpu",
+        can_undo: false,
+        can_redo: false,
+    };
+    let mut run = || {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1280.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let out = ctx.run_ui(input, |ui| {
+            let _ = panels.ui(
+                ui,
+                &doc,
+                page,
+                &selection,
+                None,
+                &status,
+                &ude_ui::theme::DARK,
+            );
+        });
+        std::hint::black_box(ctx.tessellate(out.shapes, out.pixels_per_point));
+    };
+    run(); // first frame builds fonts and the row list
+    const FRAMES: u32 = 50;
+    let t = Instant::now();
+    for _ in 0..FRAMES {
+        run();
+    }
+    (panels.layers.rows().len(), ms(t) / f64::from(FRAMES))
 }

@@ -24,10 +24,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use backend::{Backend, FrameResult};
+use backend::{Backend, FrameResult, UiFrame};
 use camera::Camera;
 use selection_ui::{Marquee, build_overlay};
-use ude_core::{Document, History, NodeId, NodeKind};
+use ude_core::{Document, History, NodeId, NodeKind, Op, Transaction};
 use ude_editor::transform::{self, Modifiers};
 use ude_editor::{
     Gesture, HandleIndex, Selection, SelectionMode, Snapper, drill, hit_test, marquee_select,
@@ -35,7 +35,9 @@ use ude_editor::{
 };
 use ude_renderer::View;
 use ude_renderer::vello::kurbo::{Point, Rect, Vec2};
+use ude_renderer::vello::peniko::Color;
 use ude_spatial::SpatialIndex;
+use ude_ui::{Action, Panels, Status, ThemeChoice, egui, theme};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -132,6 +134,14 @@ struct App {
     merge_seq: u64,
     nudge_key: Option<u64>,
     cursor_icon: CursorIcon,
+    egui: egui::Context,
+    /// Present only with the CPU backend (egui has no renderer on the vello GPU path yet).
+    egui_state: Option<egui_winit::State>,
+    panels: Panels,
+    /// Canvas area left between the panels, in device pixels.
+    canvas: Rect,
+    panel_hover: Option<NodeId>,
+    applied_theme: Option<(ThemeChoice, bool)>,
 }
 
 enum Drag {
@@ -176,6 +186,12 @@ impl App {
             merge_seq: 0,
             nudge_key: None,
             cursor_icon: CursorIcon::Default,
+            egui: egui::Context::default(),
+            egui_state: None,
+            panels: Panels::default(),
+            canvas: Rect::ZERO,
+            panel_hover: None,
+            applied_theme: None,
             index,
             selection: Selection::default(),
             hover: None,
@@ -224,25 +240,126 @@ impl App {
             .reduce(|a, b| a.union(b))
     }
 
+    /// Visible canvas area in device pixels: between the panels, or the whole window without them.
+    fn canvas_rect(&self) -> Rect {
+        if self.canvas.area() > 0.0 {
+            self.canvas
+        } else {
+            let (w, h) = self.viewport();
+            Rect::new(0.0, 0.0, w, h)
+        }
+    }
+
     fn zoom_to_fit(&mut self) {
         if let Some(bounds) = self.page_bounds() {
-            let (w, h) = self.viewport();
-            self.camera.fit(bounds, w, h, self.scale_factor());
+            let c = self.canvas_rect();
+            self.camera
+                .fit(bounds, c.width(), c.height(), self.scale_factor());
+            self.camera.pan += c.origin().to_vec2();
         }
         self.redraw();
     }
 
     fn zoom_center(&mut self, factor: f64) {
-        let (w, h) = self.viewport();
         self.camera
-            .zoom_at(Point::new(w / 2.0, h / 2.0), factor, self.scale_factor());
+            .zoom_at(self.canvas_rect().center(), factor, self.scale_factor());
         self.redraw();
+    }
+
+    /// Runs the panels and applies their actions; returns egui output for the backend.
+    fn run_panels(
+        &mut self,
+        window: &Window,
+        page: NodeId,
+    ) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
+        let state = self.egui_state.as_mut()?;
+        let input = state.take_egui_input(window);
+        let system_dark = window.theme() != Some(winit::window::Theme::Light);
+        let tokens = self.panels.theme.tokens(system_dark);
+        if self.applied_theme != Some((self.panels.theme, system_dark)) {
+            theme::apply(&self.egui, tokens);
+            self.applied_theme = Some((self.panels.theme, system_dark));
+        }
+        let renderer = self.backend.as_ref().map(Backend::name).unwrap_or_default();
+        let status = Status {
+            title: &self.title,
+            zoom: self.camera.zoom,
+            renderer: &renderer,
+            can_undo: self.history.can_undo(),
+            can_redo: self.history.can_redo(),
+        };
+        let mut result = None;
+        let out = self.egui.run_ui(input, |ui| {
+            result = Some(self.panels.ui(
+                ui,
+                &self.doc,
+                page,
+                &self.selection,
+                self.hover,
+                &status,
+                tokens,
+            ));
+        });
+        state.handle_platform_output(window, out.platform_output);
+        if out
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .is_some_and(|v| v.repaint_delay.is_zero())
+        {
+            window.request_redraw();
+        }
+        let ppp = f64::from(out.pixels_per_point);
+        let (actions, canvas) = result?;
+        self.canvas = Rect::new(
+            f64::from(canvas.left()) * ppp,
+            f64::from(canvas.top()) * ppp,
+            f64::from(canvas.right()) * ppp,
+            f64::from(canvas.bottom()) * ppp,
+        );
+        self.apply_actions(actions);
+        let jobs = self.egui.tessellate(out.shapes, out.pixels_per_point);
+        Some((jobs, out.textures_delta, out.pixels_per_point))
+    }
+
+    fn apply_actions(&mut self, actions: Vec<Action>) {
+        let hover = self.panel_hover;
+        self.panel_hover = None;
+        for action in actions {
+            match action {
+                Action::Select(ids) => self.selection.set(ids),
+                Action::Toggle(id) => self.selection.toggle(id),
+                Action::Hover(id) => self.panel_hover = id,
+                Action::Set {
+                    id,
+                    value,
+                    merge_key,
+                } => {
+                    let mut tx = Transaction::new("Edit").with_merge_key(merge_key);
+                    match tx.apply(&mut self.doc, Op::Set { id, value }) {
+                        Ok(()) => self.history.commit(&mut self.doc, tx),
+                        Err(e) => eprintln!("edit failed: {e}"),
+                    }
+                }
+                Action::Undo => self.undo(),
+                Action::Redo => self.redo(),
+                Action::ZoomToFit => self.zoom_to_fit(),
+            }
+            self.redraw();
+        }
+        if self.panel_hover != hover {
+            self.redraw();
+        }
     }
 
     fn render(&mut self, event_loop: &ActiveEventLoop) {
         let (Some(window), Some(page)) = (self.window.clone(), self.page) else {
             return;
         };
+        // Panels first: their actions edit the document before this frame is drawn.
+        let ui = self.run_panels(&window, page);
+        let system_dark = window.theme() != Some(winit::window::Theme::Light);
+        let [r, g, b, _] = self.panels.theme.tokens(system_dark).bg_canvas.to_array();
+        let bg = Color::from_rgba8(r, g, b, 255);
         if !self.fitted {
             self.fitted = true;
             self.zoom_to_fit();
@@ -271,7 +388,11 @@ impl App {
                 window.scale_factor(),
                 &self.selection,
                 // No hover outline while dragging: it would trail the moving layer.
-                if dragging { None } else { self.hover },
+                if dragging {
+                    None
+                } else {
+                    self.panel_hover.or(self.hover)
+                },
                 self.marquee.as_ref(),
             ),
             None => Default::default(),
@@ -287,7 +408,14 @@ impl App {
         };
 
         let started = Instant::now();
-        match backend.render(&self.doc, page, &view, &overlay) {
+        let ui = ui
+            .as_ref()
+            .map(|(jobs, textures, pixels_per_point)| UiFrame {
+                jobs,
+                textures,
+                pixels_per_point: *pixels_per_point,
+            });
+        match backend.render(&self.doc, page, &view, &overlay, bg, ui.as_ref()) {
             Ok(FrameResult::Presented(stats)) => {
                 if self.options.stats {
                     window.set_title(&format!(
@@ -729,6 +857,16 @@ impl ApplicationHandler for App {
             }
             Err(e) => return fatal(event_loop, &format!("no renderer available: {e}")),
         }
+        if matches!(self.backend, Some(Backend::Cpu(_))) {
+            self.egui_state = Some(egui_winit::State::new(
+                self.egui.clone(),
+                egui::ViewportId::ROOT,
+                &window,
+                Some(window.scale_factor() as f32),
+                window.theme(),
+                None,
+            ));
+        }
         self.window = Some(window.clone());
         // Render once before showing the window to avoid a blank flash. Hidden windows get
         // no paint events on Windows, so this frame is drawn directly, and the window is
@@ -742,7 +880,39 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let mut egui_consumed = false;
+        if let (Some(state), Some(window)) = (self.egui_state.as_mut(), self.window.as_ref()) {
+            let r = state.on_window_event(window, &event);
+            if r.repaint {
+                window.request_redraw();
+            }
+            egui_consumed = r.consumed;
+        }
+        let mut cursor_delta = Vec2::ZERO;
+        if let WindowEvent::CursorMoved { position, .. } = &event {
+            let p = Point::new(position.x, position.y);
+            cursor_delta = p - self.cursor;
+            self.cursor = p;
+        }
+        // Pointer over a panel belongs to egui, unless a canvas gesture is in progress.
+        let canvas_busy = self.drag.is_some() || self.marquee.is_some() || self.panning;
+        let over_panel =
+            self.egui_state.is_some() && !canvas_busy && !self.canvas.contains(self.cursor);
         match event {
+            WindowEvent::KeyboardInput { .. }
+                if egui_consumed || self.egui.egui_wants_keyboard_input() => {}
+            WindowEvent::MouseWheel { .. } if over_panel => {}
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                ..
+            } if over_panel => {}
+            WindowEvent::CursorMoved { .. } if over_panel => {
+                // egui sets the cursor icon over panels.
+                self.cursor_icon = CursorIcon::Default;
+                if self.hover.take().is_some() {
+                    self.redraw();
+                }
+            }
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 if let Some(b) = &mut self.backend {
@@ -795,12 +965,7 @@ impl ApplicationHandler for App {
                     }
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                let p = Point::new(position.x, position.y);
-                let delta = p - self.cursor;
-                self.cursor = p;
-                self.on_cursor_moved(delta);
-            }
+            WindowEvent::CursorMoved { .. } => self.on_cursor_moved(cursor_delta),
             WindowEvent::CursorLeft { .. } if self.hover.take().is_some() => self.redraw(),
             _ => {}
         }

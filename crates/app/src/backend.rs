@@ -5,6 +5,7 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use egui_software_backend::{BufferMutRef, ColorFieldOrder, EguiSoftwareRender};
 use ude_core::{Document, NodeId};
 use ude_renderer::vello::peniko::Color;
 use ude_renderer::vello::util::{RenderContext, RenderSurface};
@@ -14,8 +15,12 @@ use ude_renderer::vello_cpu::{RasterizerSettings, TargetInit};
 use ude_renderer::{FrameStats, Overlay, View, paint_overlay, paint_page, vello_cpu};
 use winit::window::Window;
 
-/// `bg.canvas` from docs/ui-design-system.md.
-pub const CANVAS_BG: Color = Color::from_rgba8(0x07, 0x09, 0x11, 0xFF);
+/// egui output to draw over the canvas (CPU backend only; see `Backend::render`).
+pub struct UiFrame<'a> {
+    pub jobs: &'a [ude_ui::egui::ClippedPrimitive],
+    pub textures: &'a ude_ui::egui::TexturesDelta,
+    pub pixels_per_point: f32,
+}
 
 pub enum Backend {
     Gpu(Box<Gpu>),
@@ -41,11 +46,13 @@ pub struct Cpu {
     frame: vello_cpu::Pixmap,
     overlay_cx: vello_cpu::RenderContext,
     resources: vello_cpu::Resources,
+    egui: EguiSoftwareRender,
 }
 
 /// Everything the rendered document depends on; any change re-renders the content.
 #[derive(Clone, Copy, PartialEq)]
 struct ContentKey {
+    bg: Color,
     revision: u64,
     page: NodeId,
     transform: [f64; 6],
@@ -101,10 +108,13 @@ impl Backend {
         page: NodeId,
         view: &View,
         overlay: &Overlay,
+        bg: Color,
+        ui: Option<&UiFrame<'_>>,
     ) -> Result<FrameResult, String> {
         match self {
-            Backend::Gpu(g) => g.render(doc, page, view, overlay),
-            Backend::Cpu(c) => c.render(doc, page, view, overlay),
+            // The GPU path has no egui renderer yet (egui-wgpu targets a different wgpu than vello).
+            Backend::Gpu(g) => g.render(doc, page, view, overlay, bg),
+            Backend::Cpu(c) => c.render(doc, page, view, overlay, bg, ui),
         }
     }
 }
@@ -146,6 +156,7 @@ impl Gpu {
         page: NodeId,
         view: &View,
         overlay: &Overlay,
+        bg: Color,
     ) -> Result<FrameResult, String> {
         self.scene.reset();
         let stats = paint_page(doc, page, view, &mut self.scene);
@@ -159,7 +170,7 @@ impl Gpu {
                 &self.scene,
                 &self.surface.target_view,
                 &RenderParams {
-                    base_color: CANVAS_BG,
+                    base_color: bg,
                     width,
                     height,
                     antialiasing_method: AaConfig::Area,
@@ -216,6 +227,7 @@ impl Cpu {
             frame: vello_cpu::Pixmap::new(cw, ch),
             overlay_cx: vello_cpu::RenderContext::new(cw, ch),
             resources: vello_cpu::Resources::new(),
+            egui: EguiSoftwareRender::new(ColorFieldOrder::Bgra),
         })
     }
 
@@ -225,8 +237,11 @@ impl Cpu {
         page: NodeId,
         view: &View,
         overlay: &Overlay,
+        bg: Color,
+        ui: Option<&UiFrame<'_>>,
     ) -> Result<FrameResult, String> {
         let key = ContentKey {
+            bg,
             revision: doc.revision(),
             page,
             transform: view.transform.as_coeffs(),
@@ -237,7 +252,7 @@ impl Cpu {
             self.content_stats = paint_page(doc, page, view, &mut self.cx);
             self.cx.flush();
             let settings = RasterizerSettings {
-                target_init: TargetInit::Clear(CANVAS_BG),
+                target_init: TargetInit::Clear(bg),
                 ..Default::default()
             };
             self.cx
@@ -271,6 +286,18 @@ impl Cpu {
             .zip(shown.data_as_u8_slice().chunks_exact(4))
         {
             *dst = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
+        }
+        if let Some(ui) = ui {
+            let (w, h) = (usize::from(self.cx.width()), usize::from(self.cx.height()));
+            let pixels: &mut [[u8; 4]] = bytemuck::cast_slice_mut(&mut buffer[..]);
+            if pixels.len() == w * h {
+                self.egui.render(
+                    &mut BufferMutRef::new(pixels, w, h),
+                    ui.jobs,
+                    ui.textures,
+                    ui.pixels_per_point,
+                );
+            }
         }
         buffer.present().map_err(|e| e.to_string())?;
         Ok(FrameResult::Presented(self.content_stats))
