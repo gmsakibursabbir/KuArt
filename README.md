@@ -4,11 +4,12 @@ A native Rust design editor (no Electron, no browser engine) that opens, edits a
 Adobe XD, Photoshop, SVG and PDF designs in one GPU-accelerated canvas, with a built-in Dev Mode
 for CSS/HTML/Tailwind/React/Vue output. It is built to run well on older PCs with 8 GB of RAM.
 
-**Status: Milestone 2 done.** A native window renders documents on the GPU (vello on wgpu) with
-automatic CPU fallback, plus pan/zoom and zero CPU use while idle. Underneath sit the scene graph,
+**Status: Milestone 2 done.** A native window renders documents with a multithreaded CPU renderer by
+default (about 21 MB for a 10k-node document), or on the GPU with `--gpu`. It supports pan/zoom and
+uses zero CPU while idle. Underneath sit the scene graph,
 undo/redo, the native `.design` format, a headless CLI and benchmarks. Editing tools come next (M3+).
-See the [roadmap](docs/roadmap.md) and [perf log](docs/perf-log.md), which tracks one open issue:
-GPU-path memory.
+See the [roadmap](docs/roadmap.md) and [perf log](docs/perf-log.md), which explains why the CPU renderer is
+the default for now.
 
 ## Documents
 
@@ -37,8 +38,8 @@ cargo test --workspace
 cargo run --release -p ude-app -- --stats
 ```
 
-With no file argument, the app opens a 10k-node demo. Pass a `.design` file to open it, and `--cpu` to
-force the CPU renderer. Controls: wheel to pan, Ctrl+wheel to zoom, Space+drag or middle-drag to
+With no file argument, the app opens a 10k-node demo. Pass a `.design` file to open it. The CPU renderer is the default (lowest memory); `--gpu` opts into
+the GPU renderer. Controls: wheel to pan, Ctrl+wheel to zoom, Space+drag or middle-drag to
 pan, Shift+1 to fit, Ctrl+0 for 100%, F3 for stats.
 
 ```bash

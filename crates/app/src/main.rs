@@ -1,6 +1,7 @@
 //! KuArt desktop application (`design-editor`).
 //!
-//! M2: GPU canvas with pan/zoom. Event-driven: no frames are rendered while idle.
+//! Canvas with pan/zoom. Event-driven: no frames are rendered while idle. The CPU renderer is
+//! the default; `--gpu` (or `UDE_RENDERER=gpu`) opts into vello on wgpu, see docs/perf-log.md.
 //!
 //! Controls: wheel = pan (Shift = horizontal), Ctrl+wheel / pinch = zoom at cursor,
 //! middle-drag or Space+drag = pan, Shift+1 = zoom to fit, Shift+0 / Ctrl+0 = 100%,
@@ -25,11 +26,12 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
-const USAGE: &str = "usage: design-editor [file.design] [--cpu] [--stats] [--demo NODES]";
+const USAGE: &str = "usage: design-editor [file.design] [--gpu | --cpu] [--stats] [--demo NODES]";
 
 struct Options {
     file: Option<PathBuf>,
-    force_cpu: bool,
+    /// GPU renderer is opt-in until its memory overhead is resolved (docs/perf-log.md).
+    use_gpu: bool,
     stats: bool,
     demo_nodes: u32,
 }
@@ -37,14 +39,15 @@ struct Options {
 fn parse_args() -> Result<Options, String> {
     let mut o = Options {
         file: None,
-        force_cpu: std::env::var("UDE_RENDERER").is_ok_and(|v| v.eq_ignore_ascii_case("cpu")),
+        use_gpu: std::env::var("UDE_RENDERER").is_ok_and(|v| v.eq_ignore_ascii_case("gpu")),
         stats: false,
         demo_nodes: 10_000,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
-            "--cpu" => o.force_cpu = true,
+            "--gpu" => o.use_gpu = true,
+            "--cpu" => o.use_gpu = false,
             "--stats" => o.stats = true,
             "--demo" => {
                 o.demo_nodes = args
@@ -278,7 +281,7 @@ impl ApplicationHandler for App {
             Ok(w) => Arc::new(w),
             Err(e) => return fatal(event_loop, &format!("cannot create window: {e}")),
         };
-        match Backend::new(window.clone(), self.options.force_cpu) {
+        match Backend::new(window.clone(), !self.options.use_gpu) {
             Ok(b) => {
                 eprintln!("renderer: {}", b.name());
                 self.backend = Some(b);

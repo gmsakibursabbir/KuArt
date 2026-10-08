@@ -65,3 +65,38 @@ Plan: break it down in M13 with the diagnostics build (per-step measurements: de
 
 The user-facing budget in memory-strategy.md (empty app 40–80 MB) is **not met on the GPU path
 yet**, and is met on the CPU path.
+
+### Root cause and decision (2026-10-08)
+
+**Cause.** Read from the vello 0.11 source (`vello_encoding::config::BufferSizes::new`). Every
+frame allocates fixed-size GPU scratch buffers, whatever the scene contains, and pools them for
+reuse:
+
+| Buffer | Size |
+|---|---|
+| `lines` | 2²¹ × 24 B ≈ 48 MB |
+| `segments` | ≈ 48 MB |
+| `ptcl` | 32 MB |
+| `tiles` + `seg_counts` | 32 MB |
+
+That is about 165 MB, plus the driver's matching allocations. The `bump_estimate` feature only
+reports an estimate; it does not size the buffers. None of this is configurable through the
+public API.
+
+**Options considered:**
+1. Switch the GPU backend to `vello_hybrid`. It runs the CPU path pipeline with GPU raster and
+   compositing through render pipelines (no compute), shares `vello_cpu`'s API (one painter for
+   both backends) and suits old iGPUs. Today it is only available as 0.2 (`vello_common` 0.2,
+   `wgpu` 29), one release behind our `vello_cpu` 0.3 / `wgpu` 30.
+2. Patch vello's buffer sizes in a vendored fork. Rejected: we would maintain a fork, and
+   undersized buffers break complex scenes.
+
+**Decision.** The CPU renderer is the default, and the GPU (vello) is opt-in via `--gpu` or
+`UDE_RENDERER=gpu`. When a `vello_hybrid` release matches `vello_common` 0.3, we adopt it as the
+GPU backend and re-measure. Until then, a scene that is too heavy for the CPU path at 60 FPS is
+what the tile cache (rendering-strategy.md §7) is for.
+
+| Default launch, 10k-node demo, fit-all | Frame | Working set | Private |
+|---|---:|---:|---:|
+| Before (GPU, vello) | 16.3 ms | 138 MB | 642 MB |
+| After (CPU, vello_cpu) | 25.4 ms | 37 MB | 21 MB |

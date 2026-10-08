@@ -12,8 +12,9 @@ pub trait RenderBackend {
 
 | Backend | When | Notes |
 |---|---|---|
-| `VelloGpu` | default | compute-shader renderer on `wgpu` (DX12 / Vulkan / Metal) |
-| `VelloCpu` / `tiny-skia` | no compute support (DX11-only / GL 3.3 iGPUs), CLI, export, CI reference | deterministic, multi-threaded |
+| `VelloCpu` (`vello_cpu`) | **default** (since M2), CLI, export, CI reference | deterministic, multi-threaded, ~20 MB private for a 10k-node document |
+| `VelloGpu` (`vello`) | opt-in `--gpu` | compute-shader renderer on `wgpu`. Its fixed ~165 MB of per-frame scratch buffers (perf-log.md) rule it out as the default |
+| `VelloHybrid` (`vello_hybrid`) | planned GPU default | CPU path processing, GPU raster via render pipelines (no compute, works on old iGPUs), same API as `vello_cpu`. Adopted once its release matches `vello_common` 0.3 |
 | `Skia` (optional feature) | only if fidelity tests show gaps we can't close | not built by default |
 
 At startup the adapter is probed. If compute shaders are unavailable or the device is lost, we
