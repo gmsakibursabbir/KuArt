@@ -25,20 +25,40 @@
                   Target="[INSTALLFOLDER]design-editor.exe" Icon="KuArtIcon" />
         <RegistryValue Root="HKCU" Key="Software\KuArt" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
         <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
-        <ProgId Id="KuArt.Design" Description="KuArt design" Icon="AppExe" IconIndex="0">
+        <ProgId Id="KuArt.krt" Description="KuArt document" Icon="AppExe" IconIndex="0">
           <Extension Id="krt" ContentType="application/x-kuart-design">
             <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
           </Extension>
+        </ProgId>
+        <ProgId Id="KuArt.design" Description="KuArt document (legacy)" Icon="AppExe" IconIndex="0">
           <Extension Id="design" ContentType="application/x-kuart-design">
             <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
           </Extension>
         </ProgId>
-        <ProgId Id="KuArt.Import" Description="Design file (opens in KuArt)" Icon="AppExe" IconIndex="0">
-          <Extension Id="fig"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
-          <Extension Id="xd"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
-          <Extension Id="sketch"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
-          <Extension Id="ai"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
-          <Extension Id="psd"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
+        <ProgId Id="KuArt.fig" Description="Figma design" Icon="AppExe" IconIndex="0">
+          <Extension Id="fig">
+            <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <ProgId Id="KuArt.sketch" Description="Sketch design" Icon="AppExe" IconIndex="0">
+          <Extension Id="sketch">
+            <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <ProgId Id="KuArt.xd" Description="Adobe XD design" Icon="AppExe" IconIndex="0">
+          <Extension Id="xd">
+            <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <ProgId Id="KuArt.psd" Description="Photoshop document" Icon="AppExe" IconIndex="0">
+          <Extension Id="psd">
+            <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <ProgId Id="KuArt.ai" Description="Illustrator document" Icon="AppExe" IconIndex="0">
+          <Extension Id="ai">
+            <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
+          </Extension>
         </ProgId>
       </Component>
       <Component Id="Cli" Guid="7C1D2E3F-4A5B-4C6D-8E9F-0A1B2C3D4E5F">

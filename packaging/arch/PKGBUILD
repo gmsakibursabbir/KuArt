@@ -12,6 +12,8 @@ depends=('fontconfig' 'libxkbcommon' 'hicolor-icon-theme')
 optdepends=('vulkan-icd-loader: GPU renderer (--gpu)')
 provides=('kuart')
 conflicts=('kuart')
+# Release binaries are already stripped.
+options=('!debug' '!strip')
 source=("${SOURCE_URL:-$url/releases/download/v$pkgver/KuArt-$pkgver-linux-x86_64.tar.gz}")
 sha256sums=('SKIP')
 

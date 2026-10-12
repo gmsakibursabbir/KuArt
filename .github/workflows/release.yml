@@ -195,7 +195,7 @@ jobs:
           chown -R builder /home/builder/pkg
           su builder -c "cd ~/pkg && SOURCE_URL=KuArt-$VERSION-linux-x86_64.tar.gz makepkg --nodeps --noconfirm"
           cp /home/builder/pkg/*.pkg.tar.zst dist/
-          tar -tf dist/*.pkg.tar.zst | grep -E 'usr/bin/design-editor$'
+          tar -tf dist/kuart-bin-$VERSION-*.pkg.tar.zst | grep -E 'usr/bin/design-editor$'
       - uses: actions/upload-artifact@v4
         with:
           name: arch
