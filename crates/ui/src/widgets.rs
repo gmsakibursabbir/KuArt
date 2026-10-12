@@ -2,7 +2,8 @@
 //! controls and primary buttons, all styled from the [`Tokens`].
 
 use egui::{
-    Align2, Color32, CornerRadius, FontFamily, FontId, Response, RichText, Sense, Stroke, Ui, vec2,
+    Align2, Color32, CornerRadius, DragValue, FontFamily, FontId, Response, RichText, Sense,
+    Stroke, Ui, vec2,
 };
 
 use crate::theme::{ICONS, Tokens};
@@ -227,4 +228,88 @@ pub fn segmented(ui: &mut Ui, t: &Tokens, options: &[&str], selected: &mut usize
 /// Small muted label used in property grids.
 pub fn field_label(ui: &mut Ui, t: &Tokens, text: &str) -> Response {
     ui.label(RichText::new(text).size(11.0).color(t.text_muted))
+}
+
+/// Display unit for lengths in the inspector. Documents store pixels (CSS px, 96 per inch).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Unit {
+    #[default]
+    Px,
+    Pt,
+    In,
+    Cm,
+    Mm,
+}
+
+impl Unit {
+    pub const ALL: [Unit; 5] = [Unit::Px, Unit::Pt, Unit::In, Unit::Cm, Unit::Mm];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Unit::Px => "px",
+            Unit::Pt => "pt",
+            Unit::In => "in",
+            Unit::Cm => "cm",
+            Unit::Mm => "mm",
+        }
+    }
+
+    /// Pixels per unit.
+    pub fn px(self) -> f64 {
+        match self {
+            Unit::Px => 1.0,
+            Unit::Pt => 96.0 / 72.0,
+            Unit::In => 96.0,
+            Unit::Cm => 96.0 / 2.54,
+            Unit::Mm => 96.0 / 25.4,
+        }
+    }
+
+    fn decimals(self) -> usize {
+        match self {
+            Unit::Px | Unit::Pt | Unit::Mm => 2,
+            Unit::In | Unit::Cm => 3,
+        }
+    }
+}
+
+/// Parses a length typed by the user, in pixels: a number in `unit`, or with its own unit
+/// ("2in", "10 mm", "12pt", "5px").
+pub fn parse_length(s: &str, unit: Unit) -> Option<f64> {
+    let s = s.trim().to_lowercase();
+    let (num, u) = match Unit::ALL.iter().find(|u| s.ends_with(u.label())) {
+        Some(u) => (s[..s.len() - 2].trim().to_owned(), *u),
+        None => (s, unit),
+    };
+    num.replace(',', ".")
+        .parse::<f64>()
+        .ok()
+        .map(|v| v * u.px())
+}
+
+/// A drag field for a length stored in pixels, shown and typed in `unit`.
+pub fn length(value: &mut f64, unit: Unit) -> DragValue<'_> {
+    let f = unit.px();
+    let d = unit.decimals();
+    DragValue::new(value)
+        .custom_formatter(move |px, _| {
+            let v = format!("{:.*}", d, px / f);
+            let v = v.trim_end_matches('0').trim_end_matches('.');
+            format!("{v} {}", unit.label())
+        })
+        .custom_parser(move |text| parse_length(text, unit))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lengths_accept_any_unit() {
+        assert_eq!(parse_length("2in", Unit::Px), Some(192.0));
+        assert_eq!(parse_length("12", Unit::Pt), Some(16.0));
+        assert_eq!(parse_length("25.4 mm", Unit::Px), Some(96.0));
+        assert_eq!(parse_length("1,5", Unit::In), Some(144.0));
+        assert_eq!(parse_length("abc", Unit::Px), None);
+    }
 }

@@ -1,7 +1,7 @@
 //! Effects section: drop and inner shadows (offset, blur, spread, colour) and layer and
 //! background blur (radius), each with show/hide and remove.
 
-use egui::{DragValue, RichText, Ui};
+use egui::{RichText, Ui};
 use ude_core::styles::{BlendMode, Color, Effect, Shadow};
 use ude_core::{NodeId, Point, Prop};
 
@@ -147,9 +147,8 @@ impl Inspector {
                                         let mut f = f64::from(*v);
                                         let r = ui
                                             .add(
-                                                DragValue::new(&mut f)
-                                                    .range(min..=1000.0)
-                                                    .max_decimals(1),
+                                                crate::widgets::length(&mut f, self.unit)
+                                                    .range(min..=1000.0),
                                             )
                                             .on_hover_text(name);
                                         if let Some(k) = self.edited(&r) {
@@ -167,7 +166,8 @@ impl Inspector {
                                     );
                                     let mut f = f64::from(*radius);
                                     let r = ui.add(
-                                        DragValue::new(&mut f).range(0.0..=250.0).max_decimals(1),
+                                        crate::widgets::length(&mut f, self.unit)
+                                            .range(0.0..=250.0),
                                     );
                                     if let Some(k) = self.edited(&r) {
                                         *radius = f as f32;

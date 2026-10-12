@@ -9,7 +9,7 @@ use ude_editor::Selection;
 
 use crate::layers::{kind_icon, kind_name};
 use crate::theme::Tokens;
-use crate::widgets::{field_label, icon, icon_button_sized, primary_button, section};
+use crate::widgets::{Unit, field_label, icon, icon_button_sized, length, primary_button, section};
 use crate::{Action, ExportFormat, ExportOptions, icons};
 
 /// Inspector merge keys live in their own range so they never merge with canvas gestures.
@@ -53,6 +53,8 @@ const BLENDS: [(BlendMode, &str); 17] = [
 #[derive(Default)]
 pub struct Inspector {
     session: u64,
+    /// Unit lengths are shown in.
+    pub unit: Unit,
     /// Search text in the font picker.
     font_query: String,
     /// Selected gradient stop in the Fill section.
@@ -175,38 +177,43 @@ impl Inspector {
                 });
             }
         };
+        let unit = std::cell::Cell::new(self.unit);
         section(
             ui,
             t,
             "Layout",
-            |_| {},
+            |ui| {
+                let mut chosen = unit.get();
+                let label = chosen.label();
+                let unit_ref = &mut chosen;
+                egui::ComboBox::from_id_salt("unit")
+                    .width(46.0)
+                    .selected_text(RichText::new(label).size(11.0))
+                    .show_ui(ui, |ui| {
+                        for u in Unit::ALL {
+                            ui.selectable_value(unit_ref, u, u.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text("Units (you can also type 2in, 10mm, 12pt…)");
+                unit.set(chosen);
+            },
             |ui| {
                 Grid::new("layout")
                     .num_columns(4)
                     .spacing([6.0, 6.0])
                     .show(ui, |ui| {
                         field_label(ui, t, "X");
-                        let kx = self.edited(&ui.add(DragValue::new(&mut x).max_decimals(2)));
+                        let u = unit.get();
+                        let kx = self.edited(&ui.add(length(&mut x, u)));
                         field_label(ui, t, "Y");
-                        let ky = self.edited(&ui.add(DragValue::new(&mut y).max_decimals(2)));
+                        let ky = self.edited(&ui.add(length(&mut y, u)));
                         ui.end_row();
                         set(actions, kx.or(ky), Prop::Transform(transform(x, y, rot)));
                         field_label(ui, t, "W");
-                        let kw = self.edited(
-                            &ui.add(
-                                DragValue::new(&mut w)
-                                    .range(0.01..=f64::MAX)
-                                    .max_decimals(2),
-                            ),
-                        );
+                        let kw = self.edited(&ui.add(length(&mut w, u).range(0.01..=f64::MAX)));
                         field_label(ui, t, "H");
-                        let kh = self.edited(
-                            &ui.add(
-                                DragValue::new(&mut h)
-                                    .range(0.01..=f64::MAX)
-                                    .max_decimals(2),
-                            ),
-                        );
+                        let kh = self.edited(&ui.add(length(&mut h, u).range(0.01..=f64::MAX)));
                         ui.end_row();
                         set(
                             actions,
@@ -226,12 +233,7 @@ impl Inspector {
                         ui.label(icon(icons::SQUARE_ROUND_CORNER, 12.0, t.text_muted))
                             .on_hover_text("Corner radius");
                         let kc = self.edited(
-                            &ui.add(
-                                DragValue::new(&mut radius)
-                                    .speed(0.25)
-                                    .range(0.0..=f64::MAX)
-                                    .max_decimals(1),
-                            ),
+                            &ui.add(length(&mut radius, u).speed(0.25).range(0.0..=f64::MAX)),
                         );
                         ui.end_row();
                         set(actions, kr, Prop::Transform(transform(x, y, rot)));
@@ -239,6 +241,8 @@ impl Inspector {
                     });
             },
         );
+
+        self.unit = unit.get();
 
         // Layer: opacity and blend mode.
         let mut opacity = f64::from(n.opacity) * 100.0;
@@ -576,12 +580,7 @@ impl Inspector {
                         }
                     }
                     let mut width = f64::from(s.width);
-                    let wr = ui.add(
-                        DragValue::new(&mut width)
-                            .speed(0.1)
-                            .range(0.0..=1000.0)
-                            .max_decimals(1),
-                    );
+                    let wr = ui.add(length(&mut width, self.unit).speed(0.1).range(0.0..=1000.0));
                     if let Some(k) = self.edited(&wr) {
                         s.width = width as f32;
                         key = Some(k);
@@ -699,12 +698,7 @@ impl Inspector {
                         ui.end_row();
                         field_label(ui, t, "Size");
                         ks = self.edited(
-                            &ui.add(
-                                DragValue::new(&mut size)
-                                    .speed(0.5)
-                                    .range(1.0..=1000.0)
-                                    .max_decimals(1),
-                            ),
+                            &ui.add(length(&mut size, self.unit).speed(0.5).range(1.0..=1000.0)),
                         );
                         ui.end_row();
                     });
