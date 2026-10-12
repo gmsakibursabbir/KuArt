@@ -63,7 +63,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Vector crop and image crop
 - ✓ SVG import and editing (import + edit as layers)
 - ✓ SVG path preservation
-- ✗ Shape conversion and flattening
+- ~ Shape conversion and flattening (booleans flatten to a vector)
 - ✗ Vector outline and simplify operations
 - ✗ Shape builder and freeform polygons
 - ✗ Brushes and variable-width strokes
@@ -315,7 +315,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 
 ## Q. APIs, storage and enterprise
 - ✓ Local-first storage · ✓ Offline editing
-- ✗ Cloud sync · ✗ automatic backups · ✗ document recovery · ✗ revision history
+- ✗ Cloud sync · ✗ automatic backups · ✓ document recovery (autosave) · ✗ revision history
 - ✗ Team/organization management, SSO, roles, audit logs, SCIM, admin
 - ~ Large-file handling (100k layers; lazy PSD channels)
 - ~ Public API (CLI + MCP; no REST/webhooks)
@@ -354,7 +354,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 - ✗ Focus mode · distraction-free canvas
 - ✗ Autosave indicators
 - ✓ Performance diagnostics (F12)
-- ✗ Crash reports and recovery
+- ~ Crash recovery (autosave) · ✗ crash reports
 - ✗ Tutorials and onboarding
 - ~ In-app help (Help menu)
 
@@ -362,10 +362,10 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 
 | Area | Status |
 |---|---|
-| A. Canvas and documents | core done; missing align/distribute, search, tabs, autosave, history |
+| A. Canvas and documents | core, align/distribute, tabs and autosave done; missing search, version history |
 | B. Vector drawing | shapes done; missing pen, point editing, gradient editor |
 | C. Raster | placement and export done; no image editing |
-| D. Typography | rendering strong; missing on-canvas editing, text styles, lists |
+| D. Typography | rendering and on-canvas editing done; missing text styles, lists |
 | E. Layout | data imported and exported to code; no live auto-layout or constraints |
 | F. Components | import only; no component editing, variables or libraries |
 | G. UI/UX | drawable by hand; no kits or diagram tools |
