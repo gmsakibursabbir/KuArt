@@ -335,7 +335,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 - ✗ Design linting and automated checks · accessibility reports
 
 ## S. Professional workflow and productivity
-- ✗ Quick actions and command palette
+- ✓ Quick actions and command palette (Ctrl+K)
 - ✓ Global menu bar (File, Edit, View, Object, Help)
 - ~ Context menus (home screen cards only)
 - ~ Custom toolbars (floating tool pill) · ✗ dockable panels
@@ -377,4 +377,4 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 | N. AI | external agents via MCP; no built-in AI |
 | O. Search/assets, P. Presentation, Q. Enterprise | mostly not started (local-first by design) |
 | R. Accessibility/QA | font/asset warnings; no linting or a11y checks |
-| S. Productivity | diagnostics, recents, menus; missing command palette and bulk tools |
+| S. Productivity | diagnostics, recents, menus; command palette; missing bulk tools |
