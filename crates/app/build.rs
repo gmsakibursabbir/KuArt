@@ -6,6 +6,7 @@ use std::path::PathBuf;
 const SOURCE: &str = "../../assets/icon.png";
 const WINDOW_ICON_SIZE: u32 = 64;
 /// Windows application manifest: per-monitor-v2 DPI, long paths, UTF-8 code page, Windows 10+.
+#[cfg(windows)]
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
@@ -39,25 +40,30 @@ fn main() {
     )
     .expect("write window icon");
 
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        let ico_path = out.join("icon.ico");
-        let file = std::fs::File::create(&ico_path).expect("create icon.ico");
-        let frames: Vec<image::codecs::ico::IcoFrame> = [16, 24, 32, 48, 64, 128, 256]
-            .into_iter()
-            .map(|s| {
-                let img = resize(s);
-                image::codecs::ico::IcoFrame::as_png(&img, s, s, image::ExtendedColorType::Rgba8)
-                    .expect("encode icon frame")
-            })
-            .collect();
-        image::codecs::ico::IcoEncoder::new(file)
-            .encode_images(&frames)
-            .expect("write icon.ico");
-        let mut res = winresource::WindowsResource::new();
-        res.set_icon(ico_path.to_str().expect("utf-8 path"));
-        res.set("ProductName", "KuArt");
-        res.set("FileDescription", "KuArt design editor");
-        res.set_manifest(MANIFEST);
-        res.compile().expect("embed Windows resources");
-    }
+    // winresource is a Windows-only build dependency (the host builds the resources).
+    #[cfg(windows)]
+    windows_resources(&out, &resize);
+}
+
+#[cfg(windows)]
+fn windows_resources(out: &std::path::Path, resize: &dyn Fn(u32) -> image::RgbaImage) {
+    let ico_path = out.join("icon.ico");
+    let file = std::fs::File::create(&ico_path).expect("create icon.ico");
+    let frames: Vec<image::codecs::ico::IcoFrame> = [16, 24, 32, 48, 64, 128, 256]
+        .into_iter()
+        .map(|s| {
+            let img = resize(s);
+            image::codecs::ico::IcoFrame::as_png(&img, s, s, image::ExtendedColorType::Rgba8)
+                .expect("encode icon frame")
+        })
+        .collect();
+    image::codecs::ico::IcoEncoder::new(file)
+        .encode_images(&frames)
+        .expect("write icon.ico");
+    let mut res = winresource::WindowsResource::new();
+    res.set_icon(ico_path.to_str().expect("utf-8 path"));
+    res.set("ProductName", "KuArt");
+    res.set("FileDescription", "KuArt design editor");
+    res.set_manifest(MANIFEST);
+    res.compile().expect("embed Windows resources");
 }

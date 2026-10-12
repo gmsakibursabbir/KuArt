@@ -80,16 +80,12 @@ jobs:
       - name: Setup exe (Inno Setup) and standalone exe
         shell: pwsh
         run: |
-          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
-            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-            if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-            $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
-          }
-          iscc /Qp "/DVersion=$env:VERSION" "/DBinDir=$PWD	arget
-elease" "/DOutDir=$PWD\dist" packaging\windows\kuart.iss
+          $inno = "${env:ProgramFiles(x86)}/Inno Setup 6"
+          if (-not (Test-Path "$inno/ISCC.exe")) { choco install innosetup -y --no-progress | Out-Null }
+          & "$inno/ISCC.exe" /Qp "/DVersion=$env:VERSION" "/DBinDir=$PWD/target/release" "/DOutDir=$PWD/dist" packaging/windows/kuart.iss
           Copy-Item target/release/design-editor.exe "dist/KuArt-$env:VERSION-x64.exe"
           if ($env:WINDOWS_CERT_BASE64) {
-            $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kitsin\*d\signtool.exe" | Select-Object -Last 1
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/signtool.exe" | Select-Object -Last 1
             & $signtool.FullName sign /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 "dist/KuArt-$env:VERSION-x64-setup.exe"
           }
       - name: Remove certificate
