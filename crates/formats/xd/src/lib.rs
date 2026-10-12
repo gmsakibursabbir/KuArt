@@ -64,6 +64,7 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
         symbols: HashMap::new(),
         images: HashMap::new(),
         warnings: Warnings::default(),
+        board: Affine::IDENTITY,
     };
     if let Some(list) = res
         .get("meta")
@@ -118,10 +119,13 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
             .and_then(|a| a.get("artboard"))
             .and_then(|a| a.get("children"))
             .and_then(Value::as_array);
+        // Artboard contents are stored in canvas coordinates: make them artboard-relative.
+        b.board = Affine::translate(-x, -y);
         for c in kids.into_iter().flatten() {
             b.object(c, id, 0)?;
         }
     }
+    b.board = Affine::IDENTITY;
     // Objects on the pasteboard, outside every artboard.
     if let Some(p) = json("artwork/pasteboard/graphics/graphicContent.agc")? {
         for c in p
@@ -237,6 +241,8 @@ struct Builder<'z> {
     symbols: HashMap<String, Value>,
     images: HashMap<String, AssetId>,
     warnings: Warnings,
+    /// Maps canvas to artboard coordinates for the artboard being read.
+    board: Affine,
 }
 
 impl Builder<'_> {
@@ -311,7 +317,12 @@ impl Builder<'_> {
             }
         };
         node.name = self.doc.strings.intern(&name);
-        node.transform = transform;
+        // Top-level objects of an artboard: canvas → artboard coordinates.
+        node.transform = if depth == 0 {
+            mul(self.board, transform)
+        } else {
+            transform
+        };
         node.flags.set(
             NodeFlags::VISIBLE,
             o.get("visible").and_then(Value::as_bool) != Some(false),
@@ -523,7 +534,16 @@ impl Builder<'_> {
                 num(frame, "height").unwrap_or(0.0),
             )
         } else {
-            (0.0, 0.0)
+            // Point text has no stored box; estimate it so it is drawn, hit-tested and exported
+            // (the editor refits it with real font metrics when edited).
+            let lines = data.content.split('\n').collect::<Vec<_>>();
+            let longest = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f32;
+            let line_h = match data.styles[0].line_height {
+                ude_core::typography::LineHeight::Px(px) => px,
+                ude_core::typography::LineHeight::Percent(p) => size * p / 100.0,
+                ude_core::typography::LineHeight::Auto => size * 1.2,
+            };
+            (longest * size * 0.6, lines.len() as f32 * line_h)
         };
         // Point text: the origin is on the first baseline. Area text: the origin is the top.
         let dy = if area {

@@ -25,9 +25,10 @@ fn sample() -> Vec<u8> {
             ]}}]}}
         }
     });
+    // Artboard contents use canvas coordinates (the artboard is at 100, 50).
     let artboard = json!({"children": [{"type": "artboard", "style": {"fill": {"type": "solid", "color": rgb(250, 250, 250)}},
     "artboard": {"children": [
-        {"type": "shape", "name": "Card", "transform": {"a": 1, "b": 0, "c": 0, "d": 1, "tx": 20, "ty": 30},
+        {"type": "shape", "name": "Card", "transform": {"a": 1, "b": 0, "c": 0, "d": 1, "tx": 120, "ty": 80},
          "shape": {"type": "rect", "x": 0, "y": 0, "width": 200, "height": 100, "r": [8, 8, 8, 8]},
          "style": {"fill": {"type": "gradient", "gradient": {"ref": "g1", "units": "objectBoundingBox", "x1": 0, "y1": 0, "x2": 1, "y2": 0}},
                    "stroke": {"type": "solid", "color": rgb(0, 0, 0), "width": 2, "align": "inside"},
@@ -36,7 +37,7 @@ fn sample() -> Vec<u8> {
             {"type": "shape", "name": "Dot", "shape": {"type": "ellipse", "cx": 10, "cy": 10, "rx": 10, "ry": 5}},
             {"type": "shape", "name": "Tri", "shape": {"type": "path", "path": "M10 10 L30 10 L20 30 Z"}}
         ]}},
-        {"type": "text", "name": "Title", "transform": {"a": 1, "b": 0, "c": 0, "d": 1, "tx": 20, "ty": 200},
+        {"type": "text", "name": "Title", "transform": {"a": 1, "b": 0, "c": 0, "d": 1, "tx": 120, "ty": 250},
          "text": {"rawText": "Hello XD", "frame": {"type": "positioned"}, "paragraphs": [{"lines": [[{"x": 0, "y": 0, "from": 0, "to": 8}]]}]},
          "style": {"font": {"family": "Inter", "style": "Semibold", "size": 20}, "fill": {"type": "solid", "color": rgb(17, 17, 17)},
                    "textAttributes": {"paragraphAlign": "center", "letterSpacing": 50}},

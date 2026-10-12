@@ -220,7 +220,9 @@ impl<P: Painter> Cx<'_, P> {
 
         // Only leaves and clipping containers have reliable bounds; other containers
         // (groups, booleans) may have children outside their own box.
-        if (leaf || clips) && !boolean {
+        // Text without a box (point text from some importers) has unknown bounds: never culled.
+        let unsized_text = matches!(n.kind, NodeKind::Text(_)) && w == 0.0 && h == 0.0;
+        if (leaf || clips) && !boolean && !unsized_text {
             let outset = f64::from(n.paint_outset());
             let bounds =
                 transform.transform_rect_bbox(Rect::new(-outset, -outset, w + outset, h + outset));

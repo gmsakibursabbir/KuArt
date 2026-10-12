@@ -45,6 +45,20 @@ pub fn kind_icon(k: &NodeKind) -> &'static str {
     }
 }
 
+/// The layer's name; blank names fall back to a text layer's first line, or the kind.
+pub fn display_name(doc: &Document, n: &ude_core::Node) -> String {
+    let name = doc.strings.resolve(n.name);
+    if !name.trim().is_empty() {
+        return name.to_owned();
+    }
+    if let NodeKind::Text(t) = &n.kind
+        && let Some(line) = t.content.lines().map(str::trim).find(|l| !l.is_empty())
+    {
+        return line.chars().take(40).collect();
+    }
+    kind_name(&n.kind).to_owned()
+}
+
 pub fn kind_name(k: &NodeKind) -> &'static str {
     match k {
         NodeKind::Frame => "Frame",
@@ -260,12 +274,8 @@ impl LayersPanel {
                             t.text_muted
                         },
                     );
-                    let name = doc.strings.resolve(node.name);
-                    let label = if name.is_empty() {
-                        kind_name(&node.kind)
-                    } else {
-                        name
-                    };
+                    let label = display_name(doc, node);
+                    let label = label.as_str();
                     let text_rect = Rect::from_min_max(
                         Pos2::new(x + 32.0, rect.top() + 3.0),
                         Pos2::new(rect.right() - 54.0, rect.bottom() - 3.0),
