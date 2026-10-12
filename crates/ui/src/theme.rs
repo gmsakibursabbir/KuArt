@@ -167,7 +167,7 @@ pub fn apply(ctx: &egui::Context, t: &Tokens) {
     v.code_bg_color = t.bg_raised;
     v.window_stroke = Stroke::new(1.0_f32, t.border_subtle);
     v.window_corner_radius = CornerRadius::same(10);
-    v.menu_corner_radius = CornerRadius::same(8);
+    v.menu_corner_radius = CornerRadius::same(4);
     v.selection.bg_fill = t.accent_soft;
     v.selection.stroke = Stroke::new(1.0_f32, t.accent);
     v.hyperlink_color = t.accent;
