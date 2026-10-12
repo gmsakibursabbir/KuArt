@@ -3438,6 +3438,8 @@ dependencies = [
  "image",
  "pollster 1.0.1",
  "rfd",
+ "serde_json",
+ "sha2",
  "softbuffer",
  "ude-bench",
  "ude-core",

@@ -33,6 +33,7 @@ mod settings;
 mod tabs;
 mod text_edit;
 mod tools;
+mod update;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -183,6 +184,13 @@ struct App {
     editing: Option<text_edit::Editing>,
     /// Pen drawing or point editing on the canvas.
     path_edit: Option<pen::PathEdit>,
+    /// A newer release found by Help → Check for updates.
+    update: Option<update::Release>,
+    update_status: Option<String>,
+    /// A verified installer waiting for the documents to be closed.
+    update_ready: Option<PathBuf>,
+    /// Leave the event loop at the next opportunity (after starting the installer).
+    quit: bool,
 }
 
 enum Drag {
@@ -258,6 +266,10 @@ impl App {
             last_autosave: Instant::now(),
             editing: None,
             path_edit: None,
+            update: None,
+            update_status: None,
+            update_ready: None,
+            quit: false,
             index,
             selection: Selection::default(),
             hover: None,
@@ -348,6 +360,10 @@ impl App {
             recents::load_textures(&self.egui, &mut self.recents);
         }
         let hint = self.hint();
+        let update = self
+            .update
+            .as_ref()
+            .map(|r| (r.version.as_str(), r.url.as_str(), r.installable()));
         let state = self.egui_state.as_mut()?;
         let input = state.take_egui_input(window);
         let system_dark = window.theme() != Some(winit::window::Theme::Light);
@@ -383,6 +399,8 @@ impl App {
             tabs: &tab_infos,
             active_tab: if self.home { None } else { self.active_tab },
             hint,
+            update,
+            update_status: self.update_status.as_deref(),
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -449,6 +467,8 @@ impl App {
                 Action::Save => self.save(),
                 Action::Export => self.export_dialog(),
                 Action::DownloadFont(family) => self.download_font(family),
+                Action::CheckUpdates => self.check_updates(),
+                Action::InstallUpdate => self.install_update(),
                 Action::SetText {
                     id,
                     content,
@@ -1182,6 +1202,9 @@ impl App {
 
 impl ApplicationHandler<AppEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.quit {
+            return event_loop.exit();
+        }
         let dirty = !self.home && self.doc.revision() != self.saved_revision;
         match autosave::due(dirty, self.last_autosave, self.last_input) {
             Some(at) if Instant::now() >= at && self.drag.is_none() => {
@@ -1207,6 +1230,8 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::FontDownloaded { family, result } => self.font_downloaded(family, result),
+            AppEvent::UpdateChecked(result) => self.update_checked(result),
+            AppEvent::UpdateInstalled(result) => self.update_installed(result),
         }
     }
 
@@ -1433,6 +1458,8 @@ pub(crate) enum AppEvent {
         family: String,
         result: Result<Vec<PathBuf>, String>,
     },
+    UpdateChecked(Result<Option<update::Release>, String>),
+    UpdateInstalled(Result<update::Installed, String>),
 }
 
 impl App {
@@ -1448,6 +1475,72 @@ impl App {
             let result = google_fonts::download(&family, &dir);
             let _ = proxy.send_event(AppEvent::FontDownloaded { family, result });
         });
+        self.redraw();
+    }
+
+    fn check_updates(&mut self) {
+        let Some(proxy) = self.proxy.clone() else {
+            return;
+        };
+        self.update_status = Some("Checking for updates…".into());
+        std::thread::spawn(move || {
+            let _ = proxy.send_event(AppEvent::UpdateChecked(update::check()));
+        });
+        self.redraw();
+    }
+
+    fn update_checked(&mut self, result: Result<Option<update::Release>, String>) {
+        self.update_status = Some(match &result {
+            Ok(Some(r)) => format!("KuArt {} is available", r.version),
+            Ok(None) => format!("KuArt {} is up to date", env!("CARGO_PKG_VERSION")),
+            Err(e) => e.clone(),
+        });
+        self.update = result.ok().flatten();
+        self.redraw();
+    }
+
+    fn install_update(&mut self) {
+        if self.update_ready.is_some() {
+            return self.run_installer();
+        }
+        let (Some(proxy), Some(r)) = (self.proxy.clone(), self.update.clone()) else {
+            return;
+        };
+        self.update_status = Some(format!("Downloading KuArt {}…", r.version));
+        std::thread::spawn(move || {
+            let _ = proxy.send_event(AppEvent::UpdateInstalled(update::install(&r)));
+        });
+        self.redraw();
+    }
+
+    fn update_installed(&mut self, result: Result<update::Installed, String>) {
+        match result {
+            Ok(update::Installed::Run(path)) => {
+                self.update_ready = Some(path);
+                self.run_installer();
+            }
+            Ok(update::Installed::Restart) => {
+                self.update = None;
+                self.update_status = Some("Updated. Restart KuArt to use the new version".into());
+            }
+            Err(e) => self.update_status = Some(e),
+        }
+        self.redraw();
+    }
+
+    /// Closes the documents (asking to save), starts the installer and quits.
+    fn run_installer(&mut self) {
+        let Some(path) = self.update_ready.clone() else {
+            return;
+        };
+        if !self.close_all() {
+            self.update_status = Some("Update ready. Click Install when your work is saved".into());
+            return self.redraw();
+        }
+        match std::process::Command::new(&path).spawn() {
+            Ok(_) => self.quit = true,
+            Err(e) => self.update_status = Some(format!("cannot start the installer: {e}")),
+        }
         self.redraw();
     }
 

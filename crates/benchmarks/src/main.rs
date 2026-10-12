@@ -298,6 +298,8 @@ pub fn panels_frame_ms(nodes: u32) -> (usize, f64) {
         tabs: &[],
         active_tab: None,
         hint: None,
+        update: None,
+        update_status: None,
     };
     let mut run = || {
         let input = egui::RawInput {

@@ -167,6 +167,9 @@ pub enum Action {
     AddPage,
     /// Download a missing font family from Google Fonts (user-initiated).
     DownloadFont(String),
+    /// Help → Check for updates (GitHub Releases), and installing the update found.
+    CheckUpdates,
+    InstallUpdate,
     Undo,
     Redo,
     ZoomToFit,
@@ -217,6 +220,10 @@ pub struct Status<'a> {
     pub active_tab: Option<usize>,
     /// What the current tool or mode does (status bar).
     pub hint: Option<&'a str>,
+    /// A newer release: version, release page, and whether it can install itself.
+    pub update: Option<(&'a str, &'a str, bool)>,
+    /// Progress or result of the last update check or install.
+    pub update_status: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -828,6 +835,15 @@ impl Panels {
             ui.label(RichText::new("Pan: Space+drag or wheel · Zoom: Ctrl+wheel").size(11.5));
             ui.label(RichText::new("Diagnostics: F12 · Stats: F3").size(11.5));
             ui.separator();
+            menu_item(
+                ui,
+                icons::ROTATE_CW,
+                "Check for updates…",
+                "",
+                actions,
+                Action::CheckUpdates,
+            );
+            ui.separator();
             ui.hyperlink_to(
                 "Documentation and source",
                 "https://github.com/gmsakibursabbir/KuArt",
@@ -863,6 +879,20 @@ impl Panels {
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(status.renderer).size(11.0).color(t.text_muted));
+                        if let Some((version, url, installable)) = status.update {
+                            if installable
+                                && ui
+                                    .add(egui::Button::new(RichText::new(format!("Install {version}")).size(11.0).color(t.on_accent)).fill(t.accent))
+                                    .on_hover_text("Download, verify and install; you are asked to save first")
+                                    .clicked()
+                            {
+                                actions.push(Action::InstallUpdate);
+                            }
+                            ui.hyperlink_to(RichText::new("What's new").size(11.0), url);
+                        }
+                        if let Some(s) = status.update_status {
+                            ui.label(RichText::new(s).size(11.0).color(t.text_muted));
+                        }
                         if !status.missing_fonts.is_empty() {
                             for family in status.missing_families {
                                 if ui
@@ -1234,6 +1264,12 @@ mod tests {
             tabs: &[],
             active_tab: None,
             hint: Some("Drag to draw"),
+            update: Some((
+                "9.9.9",
+                "https://github.com/gmsakibursabbir/KuArt/releases/latest",
+                true,
+            )),
+            update_status: Some("KuArt 9.9.9 is available"),
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(
