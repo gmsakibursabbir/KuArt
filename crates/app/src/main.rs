@@ -450,6 +450,7 @@ impl App {
                 Action::SelectPage(p) => self.select_page(p),
                 Action::AddPage => self.add_page(),
                 Action::Edit(e) => self.edit(e),
+                Action::Align(how) => self.align(how),
                 Action::AddComment(text) => self.add_comment(text),
                 Action::ReplyComment(i, text) => {
                     if let Some(c) = self.doc.comments.get_mut(i) {
@@ -622,6 +623,7 @@ impl App {
             self.modifiers.shift_key(),
             self.modifiers.control_key() || self.modifiers.super_key(),
         );
+        let alt = self.modifiers.alt_key();
         if self.drag.is_some() {
             // Esc cancels a running gesture; other keys wait until it ends.
             if code == KeyCode::Escape {
@@ -641,7 +643,10 @@ impl App {
             return;
         }
         self.nudge_key = None;
-        if !ctrl && let Some(tool) = tools::tool_for_key(code) {
+        if !ctrl
+            && !alt
+            && let Some(tool) = tools::tool_for_key(code)
+        {
             self.tool = tool;
             self.update_cursor();
             return self.redraw();
@@ -654,6 +659,14 @@ impl App {
         match code {
             KeyCode::KeyO if ctrl => self.open_dialog(),
             KeyCode::KeyN if ctrl => self.new_document(),
+            KeyCode::KeyA if alt => self.align(ude_editor::Align::Left),
+            KeyCode::KeyD if alt => self.align(ude_editor::Align::Right),
+            KeyCode::KeyH if alt && shift => self.align(ude_editor::Align::DistributeH),
+            KeyCode::KeyH if alt => self.align(ude_editor::Align::HCenter),
+            KeyCode::KeyW if alt => self.align(ude_editor::Align::Top),
+            KeyCode::KeyS if alt => self.align(ude_editor::Align::Bottom),
+            KeyCode::KeyV if alt && shift => self.align(ude_editor::Align::DistributeV),
+            KeyCode::KeyV if alt => self.align(ude_editor::Align::VCenter),
             KeyCode::KeyC if ctrl => self.copy(),
             KeyCode::KeyX if ctrl => {
                 self.copy();
@@ -1482,6 +1495,16 @@ impl App {
         let s = self.scale_factor();
         let target = self.canvas.center();
         self.camera.pan = target.to_vec2() - at.to_vec2() * (self.camera.zoom * s);
+        self.redraw();
+    }
+}
+
+impl App {
+    fn align(&mut self, how: ude_editor::Align) {
+        let ids = self.selection.ids().to_vec();
+        if let Err(e) = ude_editor::commands::align(&mut self.doc, &mut self.history, &ids, how) {
+            eprintln!("align failed: {e}");
+        }
         self.redraw();
     }
 }

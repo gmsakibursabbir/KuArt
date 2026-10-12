@@ -145,6 +145,7 @@ pub enum Action {
     ZoomOut,
     Zoom100,
     ToggleDiagnostics,
+    Align(ude_editor::Align),
     /// New comment pinned at the centre of the view.
     AddComment(String),
     ReplyComment(usize, String),
@@ -542,6 +543,44 @@ impl Panels {
                 actions,
                 Action::Edit(Edit::SendBackward),
             );
+            ui.separator();
+            ui.menu_button("Align", |ui| {
+                use ude_editor::Align as A;
+                menu_item(ui, "Left", "Alt+A", actions, Action::Align(A::Left));
+                menu_item(
+                    ui,
+                    "Horizontal centers",
+                    "Alt+H",
+                    actions,
+                    Action::Align(A::HCenter),
+                );
+                menu_item(ui, "Right", "Alt+D", actions, Action::Align(A::Right));
+                ui.separator();
+                menu_item(ui, "Top", "Alt+W", actions, Action::Align(A::Top));
+                menu_item(
+                    ui,
+                    "Vertical centers",
+                    "Alt+V",
+                    actions,
+                    Action::Align(A::VCenter),
+                );
+                menu_item(ui, "Bottom", "Alt+S", actions, Action::Align(A::Bottom));
+                ui.separator();
+                menu_item(
+                    ui,
+                    "Distribute horizontally",
+                    "Alt+Shift+H",
+                    actions,
+                    Action::Align(A::DistributeH),
+                );
+                menu_item(
+                    ui,
+                    "Distribute vertically",
+                    "Alt+Shift+V",
+                    actions,
+                    Action::Align(A::DistributeV),
+                );
+            });
         });
         ui.menu_button(menu("Help"), |ui| {
             ui.set_min_width(260.0);

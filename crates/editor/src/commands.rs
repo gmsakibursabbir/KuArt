@@ -321,6 +321,127 @@ pub fn arrange(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    HCenter,
+    Right,
+    Top,
+    VCenter,
+    Bottom,
+    /// Equal gaps between layers, left to right.
+    DistributeH,
+    /// Equal gaps between layers, top to bottom.
+    DistributeV,
+}
+
+/// Aligns layers to their combined bounds (a single layer aligns to its parent frame), or
+/// distributes three or more with equal gaps.
+pub fn align(
+    doc: &mut Document,
+    history: &mut History,
+    ids: &[NodeId],
+    how: Align,
+) -> Result<(), DocError> {
+    let ids = top_level(doc, ids);
+    let boxes: Vec<(NodeId, Rect)> = ids
+        .iter()
+        .filter_map(|&id| Some((id, doc.world_bounds(id)?)))
+        .collect();
+    if boxes.is_empty() {
+        return Ok(());
+    }
+    let target = if let [(id, _)] = boxes[..] {
+        // One layer: align inside its parent frame (not a page).
+        match doc.node(id).and_then(|n| n.parent) {
+            Some(p) if !matches!(doc.node(p).map(|n| &n.kind), Some(NodeKind::Page)) => {
+                match doc.world_bounds(p) {
+                    Some(b) => b,
+                    None => return Ok(()),
+                }
+            }
+            _ => return Ok(()),
+        }
+    } else {
+        boxes
+            .iter()
+            .map(|(_, b)| *b)
+            .reduce(|a, b| a.union(&b))
+            .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0))
+    };
+    let mut moves: Vec<(NodeId, f32, f32)> = Vec::new();
+    match how {
+        Align::DistributeH | Align::DistributeV if boxes.len() < 3 => return Ok(()),
+        Align::DistributeH | Align::DistributeV => {
+            let horizontal = how == Align::DistributeH;
+            let mut sorted = boxes.clone();
+            sorted.sort_by(|a, b| {
+                let (ka, kb) = if horizontal {
+                    (a.1.x0, b.1.x0)
+                } else {
+                    (a.1.y0, b.1.y0)
+                };
+                ka.total_cmp(&kb)
+            });
+            let total: f32 = sorted
+                .iter()
+                .map(|(_, b)| if horizontal { b.width() } else { b.height() })
+                .sum();
+            let span = if horizontal {
+                target.width()
+            } else {
+                target.height()
+            };
+            let gap = (span - total) / (sorted.len() - 1) as f32;
+            let mut at = if horizontal { target.x0 } else { target.y0 };
+            for (id, b) in sorted {
+                let delta = at - if horizontal { b.x0 } else { b.y0 };
+                moves.push(if horizontal {
+                    (id, delta, 0.0)
+                } else {
+                    (id, 0.0, delta)
+                });
+                at += (if horizontal { b.width() } else { b.height() }) + gap;
+            }
+        }
+        _ => {
+            for (id, b) in &boxes {
+                let (dx, dy) = match how {
+                    Align::Left => (target.x0 - b.x0, 0.0),
+                    Align::HCenter => ((target.x0 + target.x1 - b.x0 - b.x1) / 2.0, 0.0),
+                    Align::Right => (target.x1 - b.x1, 0.0),
+                    Align::Top => (0.0, target.y0 - b.y0),
+                    Align::VCenter => (0.0, (target.y0 + target.y1 - b.y0 - b.y1) / 2.0),
+                    Align::Bottom => (0.0, target.y1 - b.y1),
+                    _ => (0.0, 0.0),
+                };
+                moves.push((*id, dx, dy));
+            }
+        }
+    }
+    let mut tx = Transaction::new("Align");
+    for (id, dx, dy) in moves {
+        if dx.abs() < 1e-4 && dy.abs() < 1e-4 {
+            continue;
+        }
+        let Some(n) = doc.node(id) else { continue };
+        let to_parent = n.parent.map_or(Affine::IDENTITY, |p| {
+            doc.world_transform(p).inverse().unwrap_or(Affine::IDENTITY)
+        });
+        let [a, b, c, d, _, _] = to_parent.0;
+        let (lx, ly) = (a * dx + c * dy, b * dx + d * dy);
+        let value = Prop::Transform(Affine::translate(lx, ly) * n.transform);
+        if let Err(e) = tx.apply(doc, Op::Set { id, value }) {
+            tx.rollback(doc)?;
+            return Err(e);
+        }
+    }
+    if !tx.is_empty() {
+        history.commit(doc, tx);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +522,42 @@ mod tests {
         assert_eq!(doc.children(page), &[g, c]);
         h.undo(&mut doc).unwrap();
         assert_eq!(doc.children(page), &[a, b, c]);
+    }
+
+    #[test]
+    fn align_and_distribute() {
+        let (mut doc, page, [a, b, c]) = setup();
+        let mut h = History::default();
+        // Offset b vertically, then align tops.
+        doc.apply(Op::Set {
+            id: b,
+            value: Prop::Transform(Affine::translate(100.0, 40.0)),
+        })
+        .unwrap();
+        align(&mut doc, &mut h, &[a, b, c], Align::Top).unwrap();
+        for id in [a, b, c] {
+            assert_eq!(doc.world_bounds(id).unwrap().y0, 10.0);
+        }
+        // Squeeze c left, then distribute: gaps become equal (80 each).
+        doc.apply(Op::Set {
+            id: c,
+            value: Prop::Transform(Affine::translate(150.0, 10.0)),
+        })
+        .unwrap();
+        doc.apply(Op::Set {
+            id: c,
+            value: Prop::Transform(Affine::translate(300.0, 10.0)),
+        })
+        .unwrap();
+        align(&mut doc, &mut h, &[a, b, c], Align::DistributeH).unwrap();
+        let xs: Vec<f32> = [a, b, c]
+            .iter()
+            .map(|&id| doc.world_bounds(id).unwrap().x0)
+            .collect();
+        assert_eq!(xs, [0.0, 150.0, 300.0]);
+        h.undo(&mut doc).unwrap();
+        assert_eq!(doc.world_bounds(b).unwrap().x0, 100.0);
+        let _ = page;
     }
 
     #[test]
