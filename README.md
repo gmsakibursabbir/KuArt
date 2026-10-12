@@ -4,26 +4,33 @@ A native Rust design editor (no Electron, no browser engine) that opens, edits a
 Adobe XD, Photoshop, SVG and PDF designs in one GPU-accelerated canvas, with a built-in Dev Mode
 for CSS/HTML/Tailwind/React/Vue output. It is built to run well on older PCs with 8 GB of RAM.
 
-**Status: Milestone 9 done.** SVG files open (Ctrl+O or CLI). SVG export now wraps text exactly like the canvas.
+**Status: 0.1.0, the first release (MVP milestones M0–M14).** Downloads for Windows (installer,
+MSI, portable) and Linux (AppImage, deb, rpm, Arch) are on the
+[releases page](https://github.com/gmsakibursabbir/KuArt/releases).
 
-M8: Open (Ctrl+O), Save (Ctrl+S), Save As (Ctrl+Shift+S) and Export to PNG/SVG (Ctrl+Shift+E) in the app; `design-editor-cli convert` to .png/.svg.
+## What it does
 
-M7: Images render (decoded at the size on screen, bounded cache) and PNG/JPG/WebP files open directly. App icon: `assets/icon.png`.
+* **Opens** KuArt `.krt` documents, Figma files (`.fig`, `.jam`, `.deck`, `.buzz`, `.site`,
+  `.make`), Sketch (`.sketch`), Adobe XD (`.xd`), Photoshop (`.psd`, `.psb`), Illustrator (`.ai`),
+  PDF, SVG and PNG/JPEG/WebP images. Unsupported features are listed in the
+  [compatibility matrix](docs/compatibility-matrix.md); the importers report what they skip.
+* **Edits:** select (click, marquee, deep select), move with snapping, resize and rotate, frame,
+  rectangle, ellipse, polygon, star, line and text tools, layers panel, inspector, copy/cut/paste,
+  duplicate, group/ungroup, layer order, undo/redo.
+* **Exports** PNG and SVG, and **turns designs into code**: HTML, CSS, Tailwind, React, Vue and
+  design tokens (`design-editor-cli code`, or the MCP `generate_code` tool).
+* **Works with AI agents:** `design-editor-cli mcp` is an [MCP server](docs/mcp.md) that can
+  create, edit, preview, save and code-generate designs.
+* **Fonts:** system fonts plus a KuArt fonts folder; missing fonts are named in the status bar,
+  with a one-click Google Fonts download.
+* **Light:** 34 MB private memory with an empty document, 85 MB with 100k layers, 0% CPU when
+  idle, about 0.1 s to the first frame ([perf log](docs/perf-log.md)). Offline first: it only goes
+  online when you click a font download.
 
-M6: Drawing tools (frame, rectangle, ellipse, polygon, star, line, text; V F R O P S L T) and real text rendering with missing-font warnings.
-
-M5: Kuduy-styled panels (layers, inspector, top and status bars, dark/light/system/high-contrast themes) around the canvas.
-
-M4: You can select layers (click, deep select, Shift multi-select,
-double-click into groups, marquee) and edit them: move with snapping, resize and rotate with
-handles (Shift/Alt modifiers), nudge, delete, and undo/redo. Each drag is one undo step.
-
-Before that, M2 delivered the canvas: A native window renders documents with a multithreaded CPU renderer by
-default (about 21 MB for a 10k-node document), or on the GPU with `--gpu`. It supports pan/zoom and
-uses zero CPU while idle. Underneath sit the scene graph,
-undo/redo, the native `.krt` format, a headless CLI and benchmarks. Editing tools come next (M3+).
-See the [roadmap](docs/roadmap.md) and [perf log](docs/perf-log.md), which explains why the CPU renderer is
-the default for now.
+Shortcuts: V F R O P S L T (tools), Ctrl+O / S / Shift+S (open, save, save as), Ctrl+Shift+E
+(export), Ctrl+Z / Y (undo, redo), Ctrl+C / X / V / D (copy, cut, paste, duplicate), Ctrl+G /
+Ctrl+Shift+G (group, ungroup), Ctrl+] / [ (forward, backward), Shift+1 (fit), Ctrl+0 (100%), F12
+(diagnostics). Known gaps and what comes next: [roadmap](docs/roadmap.md).
 
 ## Documents
 
@@ -39,6 +46,7 @@ the default for now.
 | [Distribution](docs/distribution.md) | Windows and Linux builds, packages, signing, CI |
 | [Benchmark plan](docs/benchmark-plan.md) | reproducible benchmarks and success criteria |
 | [Compatibility matrix](docs/compatibility-matrix.md) | honest per-feature status |
+| [MCP server](docs/mcp.md) | tools for AI agents |
 
 ## Build
 
@@ -54,7 +62,7 @@ cargo run --release -p ude-app -- --stats
 
 With no file argument, the app opens a 10k-node demo. Pass a `.krt` file to open it. The CPU renderer is the default (lowest memory); `--gpu` opts into
 the GPU renderer. Controls: wheel to pan, Ctrl+wheel to zoom, Space+drag or middle-drag to
-pan, Shift+1 to fit, Ctrl+0 for 100%, F3 for stats.
+pan, Shift+1 to fit, Ctrl+0 for 100%, F3 for stats, F12 for diagnostics.
 
 ```bash
 cargo run --release -p ude-bench
