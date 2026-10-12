@@ -98,7 +98,7 @@ impl Inspector {
         actions: &mut Vec<Action>,
     ) {
         if !selection.is_empty() {
-            align_bar(ui, t, selection.ids().len() >= 3, actions);
+            align_bar(ui, t, selection.ids().len(), actions);
         }
         let id = match selection.ids() {
             [] => {
@@ -657,7 +657,8 @@ impl Inspector {
 }
 
 /// Align (to selection, or to the parent frame for one layer) and distribute buttons.
-fn align_bar(ui: &mut Ui, t: &Tokens, can_distribute: bool, actions: &mut Vec<Action>) {
+fn align_bar(ui: &mut Ui, t: &Tokens, selected: usize, actions: &mut Vec<Action>) {
+    let can_distribute = selected >= 3;
     use ude_editor::Align as A;
     ui.add_space(6.0);
     ui.horizontal(|ui| {
@@ -706,6 +707,17 @@ fn align_bar(ui: &mut Ui, t: &Tokens, can_distribute: bool, actions: &mut Vec<Ac
             }
         });
     });
+    if selected >= 2 {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 1.0;
+            for (glyph, label, key, e) in crate::BOOLEANS {
+                let tip = format!("{label}  {key}");
+                if icon_button_sized(ui, t, glyph, &tip, false, 28.0, 15.0).clicked() {
+                    actions.push(Action::Edit(e));
+                }
+            }
+        });
+    }
     let w = ui.available_width();
     let (line, _) = ui.allocate_exact_size(egui::vec2(w, 1.0), egui::Sense::hover());
     ui.painter().rect_filled(line, 0.0, t.border_subtle);

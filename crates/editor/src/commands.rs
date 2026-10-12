@@ -1,6 +1,7 @@
 //! Structural editing commands: duplicate, copy/paste, group/ungroup and stacking order. Each
 //! command is one undoable transaction.
 
+use ude_core::scene::BoolOpKind;
 use ude_core::{
     Affine, DocError, Document, History, Node, NodeId, NodeKind, Op, Prop, Rect, Transaction,
 };
@@ -144,7 +145,80 @@ pub fn group(
     history: &mut History,
     ids: &[NodeId],
 ) -> Result<Option<NodeId>, DocError> {
-    let ids = top_level(doc, ids);
+    group_as(doc, history, ids, NodeKind::Group, "Group")
+}
+
+/// Combines the layers into a live boolean group (bottom layer first, as in Figma). The group
+/// takes the bottom layer's fills and strokes; the layers stay editable inside it.
+pub fn boolean(
+    doc: &mut Document,
+    history: &mut History,
+    ids: &[NodeId],
+    kind: BoolOpKind,
+) -> Result<Option<NodeId>, DocError> {
+    let label = match kind {
+        BoolOpKind::Union => "Union",
+        BoolOpKind::Subtract => "Subtract",
+        BoolOpKind::Intersect => "Intersect",
+        BoolOpKind::Exclude => "Exclude",
+    };
+    if top_level(doc, ids).len() < 2 {
+        return Ok(None);
+    }
+    group_as(doc, history, ids, NodeKind::BooleanOp(kind), label)
+}
+
+/// Replaces each selected boolean group by a single vector layer with its result.
+/// Returns the new layers.
+pub fn flatten(
+    doc: &mut Document,
+    history: &mut History,
+    ids: &[NodeId],
+) -> Result<Vec<NodeId>, DocError> {
+    let mut tx = Transaction::new("Flatten");
+    let mut out = Vec::new();
+    let result = (|| {
+        for id in top_level(doc, ids) {
+            let (Some(parent), index) = index_in_parent(doc, id) else {
+                continue;
+            };
+            let Some(v) = ude_boolean::as_vector(doc, id) else {
+                continue;
+            };
+            let new = doc.create(v);
+            tx.apply(
+                doc,
+                Op::Attach {
+                    id: new,
+                    parent,
+                    index: index as u32 + 1,
+                },
+            )?;
+            tx.apply(doc, Op::Detach { id })?;
+            out.push(new);
+        }
+        Ok(())
+    })();
+    if let Err(e) = result {
+        tx.rollback(doc)?;
+        return Err(e);
+    }
+    if !out.is_empty() {
+        history.commit(doc, tx);
+    }
+    Ok(out)
+}
+
+fn group_as(
+    doc: &mut Document,
+    history: &mut History,
+    ids: &[NodeId],
+    kind: NodeKind,
+    label: &'static str,
+) -> Result<Option<NodeId>, DocError> {
+    let mut ids = top_level(doc, ids);
+    // Keep the stacking order (bottom first), whatever order they were selected in.
+    ids.sort_by_key(|&id| index_in_parent(doc, id).1);
     let Some(&last) = ids.last() else {
         return Ok(None);
     };
@@ -166,13 +240,29 @@ pub fn group(
         })
         .reduce(|a, b| a.union(&b))
         .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0));
-    let name = doc.strings.intern("Group");
-    let group = doc.create(
-        Node::new(NodeKind::Group, name)
-            .with_transform(Affine::translate(bounds.x0, bounds.y0))
-            .with_size(bounds.width(), bounds.height()),
-    );
-    let mut tx = Transaction::new("Group");
+    let boolean = matches!(kind, NodeKind::BooleanOp(_));
+    let style = ids
+        .first()
+        .and_then(|&id| doc.node(id))
+        .filter(|_| boolean)
+        .map(|n| {
+            (
+                n.fills.clone(),
+                n.ext.as_ref().and_then(|e| e.strokes.clone()),
+            )
+        });
+    let name = doc.strings.intern(label);
+    let mut node = Node::new(kind, name)
+        .with_transform(Affine::translate(bounds.x0, bounds.y0))
+        .with_size(bounds.width(), bounds.height());
+    if let Some((fills, strokes)) = style {
+        node.fills = fills;
+        if strokes.is_some() {
+            node.ext.get_or_insert_with(Default::default).strokes = strokes;
+        }
+    }
+    let group = doc.create(node);
+    let mut tx = Transaction::new(label);
     let result = (|| {
         // Insert above the topmost layer, then move the layers in, bottom first.
         tx.apply(
@@ -220,7 +310,12 @@ pub fn ungroup(
 ) -> Result<Vec<NodeId>, DocError> {
     let groups: Vec<NodeId> = top_level(doc, ids)
         .into_iter()
-        .filter(|&id| matches!(doc.node(id).map(|n| &n.kind), Some(NodeKind::Group)))
+        .filter(|&id| {
+            matches!(
+                doc.node(id).map(|n| &n.kind),
+                Some(NodeKind::Group | NodeKind::BooleanOp(_))
+            )
+        })
         .collect();
     let mut tx = Transaction::new("Ungroup");
     let mut out = Vec::new();
@@ -490,6 +585,37 @@ mod tests {
             doc.node(p[0]).unwrap().transform.translation(),
             Point::new(0.0, 10.0)
         );
+    }
+
+    #[test]
+    fn boolean_flatten_and_undo() {
+        let (mut doc, page, [a, b, c]) = setup();
+        let mut h = History::default();
+        // Selected top-first: the group still keeps stacking order (bottom first).
+        let g = boolean(&mut doc, &mut h, &[b, a], BoolOpKind::Union)
+            .unwrap()
+            .unwrap();
+        assert_eq!(doc.children(page), &[g, c]);
+        assert_eq!(doc.children(g), &[a, b]);
+        assert!(matches!(
+            doc.node(g).unwrap().kind,
+            NodeKind::BooleanOp(BoolOpKind::Union)
+        ));
+        assert!(
+            boolean(&mut doc, &mut h, &[c], BoolOpKind::Union)
+                .unwrap()
+                .is_none()
+        );
+
+        let flat = flatten(&mut doc, &mut h, &[g]).unwrap();
+        assert_eq!(doc.children(page), &[flat[0], c]);
+        assert!(matches!(
+            doc.node(flat[0]).unwrap().kind,
+            NodeKind::Vector(_)
+        ));
+        h.undo(&mut doc).unwrap();
+        assert_eq!(doc.children(page), &[g, c]);
+        assert_eq!(ungroup(&mut doc, &mut h, &[g]).unwrap(), vec![a, b]);
     }
 
     #[test]

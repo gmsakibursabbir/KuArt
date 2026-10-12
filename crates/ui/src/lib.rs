@@ -25,6 +25,29 @@ use ude_core::{Document, NodeId, Prop};
 use ude_editor::{Selection, Tool};
 use widgets::{icon, icon_button, icon_button_sized, primary_button, segmented};
 
+/// Boolean operations: icon, label, shortcut, command.
+pub const BOOLEANS: [(&str, &str, &str, Edit); 4] = [
+    (icons::SQUARES_UNITE, "Union", "Ctrl+Alt+U", Edit::Union),
+    (
+        icons::SQUARES_SUBTRACT,
+        "Subtract",
+        "Ctrl+Alt+S",
+        Edit::Subtract,
+    ),
+    (
+        icons::SQUARES_INTERSECT,
+        "Intersect",
+        "Ctrl+Alt+I",
+        Edit::Intersect,
+    ),
+    (
+        icons::SQUARES_EXCLUDE,
+        "Exclude",
+        "Ctrl+Alt+X",
+        Edit::Exclude,
+    ),
+];
+
 /// Structural edit commands (menu and shortcuts).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Edit {
@@ -35,6 +58,12 @@ pub enum Edit {
     Delete,
     Group,
     Ungroup,
+    /// Boolean groups (live) and flattening them into a vector.
+    Union,
+    Subtract,
+    Intersect,
+    Exclude,
+    Flatten,
     BringForward,
     SendBackward,
     SelectAll,
@@ -682,6 +711,18 @@ impl Panels {
                 "Ctrl+Shift+G",
                 actions,
                 Action::Edit(Edit::Ungroup),
+            );
+            ui.separator();
+            for (glyph, label, key, e) in BOOLEANS {
+                menu_item(ui, glyph, label, key, actions, Action::Edit(e));
+            }
+            menu_item(
+                ui,
+                icons::COMBINE,
+                "Flatten",
+                "Ctrl+E",
+                actions,
+                Action::Edit(Edit::Flatten),
             );
             ui.separator();
             menu_item(

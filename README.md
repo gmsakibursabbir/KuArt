@@ -12,7 +12,7 @@ and turn them into code. No browser engine, no account, no cloud.
 [![Release](https://img.shields.io/github/v/release/gmsakibursabbir/KuArt?include_prereleases&label=release)](https://github.com/gmsakibursabbir/KuArt/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-informational)
-![Rust](https://img.shields.io/badge/rust-1.85%2B-orange)
+![Rust](https://img.shields.io/badge/rust-1.88%2B-orange)
 
 [Download](#download) · [Features](#features) · [File formats](#file-formats) ·
 [Code generation](#design-to-code) · [AI agents (MCP)](#ai-agents-mcp) · [Build](#building-from-source) · [Docs](#documentation)
@@ -146,7 +146,7 @@ design-editor-cli mcp                              # MCP server on stdio
 
 ## Building from source
 
-Requires stable Rust 1.85 or newer. There are no system library requirements at build time on
+Requires stable Rust 1.88 or newer. There are no system library requirements at build time on
 Windows or Linux.
 
 ```bash
@@ -176,9 +176,9 @@ crates/
 
 ## Roadmap
 
-0.1 completes the MVP (milestones M0–M14). Next up: on-canvas text editing, the pen tool and
-boolean operations, masks and blur rendering, component editing, the auto-layout solver, an
-in-app Dev Mode panel and PDF export. The full plan and the list of known gaps are in
+0.1 completes the MVP (milestones M0–M14). Since then: on-canvas text editing, live boolean
+operations, Dev Mode, PDF export, document tabs and autosave. Next up: the pen tool, masks and
+blur rendering, component editing, the auto-layout solver and P2P collaboration. The full plan and the list of known gaps are in
 [docs/roadmap.md](docs/roadmap.md).
 
 ## Documentation

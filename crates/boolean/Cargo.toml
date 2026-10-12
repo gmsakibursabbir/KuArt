@@ -1,0 +1,14 @@
+[package]
+name = "ude-boolean"
+description = "Boolean shape operations (union, subtract, intersect, exclude) for boolean groups"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+i_overlay = "9"
+ude-core = { path = "../core" }
+
+[lints]
+workspace = true

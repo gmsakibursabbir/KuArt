@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/formats/native", "crates/benchmarks", "crates/cli", "crates/renderer", "crates/app", "crates/spatial", "crates/editor", "crates/ui", "crates/formats/raster", "crates/formats/svg", "crates/formats/svg-import", "crates/codegen", "crates/formats/psd", "crates/formats/fig", "crates/formats/zip", "crates/formats/xd", "crates/diagnostics", "crates/formats/sketch", "crates/formats/pdf"]
+members = ["crates/core", "crates/formats/native", "crates/benchmarks", "crates/cli", "crates/renderer", "crates/app", "crates/spatial", "crates/editor", "crates/ui", "crates/formats/raster", "crates/formats/svg", "crates/formats/svg-import", "crates/codegen", "crates/formats/psd", "crates/formats/fig", "crates/formats/zip", "crates/formats/xd", "crates/diagnostics", "crates/formats/sketch", "crates/formats/pdf", "crates/boolean"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 
 [workspace.lints.rust]
@@ -13,6 +13,8 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 unwrap_used = "warn"
+# `as_chunks` (1.88) is not clearer than `chunks_exact` for pixel loops.
+chunks_exact_to_as_chunks = "allow"
 
 [profile.release]
 lto = "fat"

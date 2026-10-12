@@ -120,6 +120,17 @@ impl Writer<'_> {
 
     fn node(&mut self, id: NodeId) {
         let Some(n) = self.doc.node(id) else { return };
+        // A boolean group is written as its combined path.
+        let combined;
+        let n = if matches!(n.kind, NodeKind::BooleanOp(_)) {
+            let Some(v) = ude_boolean::as_vector(self.doc, id) else {
+                return;
+            };
+            combined = v;
+            &combined
+        } else {
+            n
+        };
         if !n.is_visible() || n.flags.contains(NodeFlags::IS_MASK) {
             return;
         }

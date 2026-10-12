@@ -12,6 +12,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 ude-format-psd = { path = "../formats/psd" }
 parley = "0.11"
 ude-core = { path = "../core" }
+ude-boolean = { path = "../boolean" }
 vello = "0.11"
 vello_cpu = { version = "0.3", features = ["multithreading"] }
 # PDF export: glyph outlines and stream compression.

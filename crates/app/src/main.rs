@@ -37,6 +37,7 @@ use std::time::{Duration, Instant};
 use backend::{Backend, FrameResult, UiFrame};
 use camera::Camera;
 use selection_ui::{Marquee, build_overlay};
+use ude_core::scene::BoolOpKind;
 use ude_core::{Document, History, NodeId, NodeKind, Op, Transaction};
 use ude_editor::transform::{self, Modifiers};
 use ude_editor::{Arrange, Tool};
@@ -724,6 +725,11 @@ impl App {
             }
             KeyCode::KeyV if ctrl => self.paste(),
             KeyCode::KeyD if ctrl => self.structural("duplicate"),
+            KeyCode::KeyU if ctrl && alt => self.boolean(BoolOpKind::Union),
+            KeyCode::KeyS if ctrl && alt => self.boolean(BoolOpKind::Subtract),
+            KeyCode::KeyI if ctrl && alt => self.boolean(BoolOpKind::Intersect),
+            KeyCode::KeyX if ctrl && alt => self.boolean(BoolOpKind::Exclude),
+            KeyCode::KeyE if ctrl => self.structural("flatten"),
             KeyCode::KeyG if ctrl && shift => self.structural("ungroup"),
             KeyCode::KeyG if ctrl => self.structural("group"),
             KeyCode::BracketRight if ctrl => self.arrange(if shift {
@@ -1516,12 +1522,23 @@ impl App {
         let result = match what {
             "duplicate" => c::duplicate(doc, history, &ids),
             "group" => c::group(doc, history, &ids).map(|g| g.into_iter().collect()),
+            "flatten" => c::flatten(doc, history, &ids),
             _ => c::ungroup(doc, history, &ids),
         };
         match result {
             Ok(new) if !new.is_empty() => self.selection.set(new),
             Ok(_) => {}
             Err(e) => eprintln!("{what} failed: {e}"),
+        }
+        self.redraw();
+    }
+
+    fn boolean(&mut self, kind: BoolOpKind) {
+        let ids = self.selection.ids().to_vec();
+        match ude_editor::commands::boolean(&mut self.doc, &mut self.history, &ids, kind) {
+            Ok(Some(id)) => self.selection.set([id]),
+            Ok(None) => {}
+            Err(e) => eprintln!("boolean failed: {e}"),
         }
         self.redraw();
     }
@@ -1556,6 +1573,11 @@ impl App {
             E::Delete => self.delete_selection(),
             E::Group => self.structural("group"),
             E::Ungroup => self.structural("ungroup"),
+            E::Union => self.boolean(BoolOpKind::Union),
+            E::Subtract => self.boolean(BoolOpKind::Subtract),
+            E::Intersect => self.boolean(BoolOpKind::Intersect),
+            E::Exclude => self.boolean(BoolOpKind::Exclude),
+            E::Flatten => self.structural("flatten"),
             E::BringForward => self.arrange(Arrange::Forward),
             E::SendBackward => self.arrange(Arrange::Backward),
             E::SelectAll => {

@@ -26,6 +26,33 @@ pub use text::{CaretMove, TextEngine, TextSelection};
 pub struct RenderCaches {
     pub text: TextEngine,
     pub images: ImageCache,
+    /// Boolean group results, keyed by node; recomputed when the document changes.
+    booleans: std::collections::HashMap<NodeId, (usize, u64, BezPath)>,
+}
+
+impl RenderCaches {
+    /// Outline of a boolean group in its local coordinates (cached per document revision).
+    fn boolean(&mut self, doc: &Document, id: NodeId) -> Option<Shape> {
+        let key = (std::ptr::from_ref(doc) as usize, doc.revision());
+        let hit = self.booleans.get(&id).filter(|e| (e.0, e.1) == key);
+        let path = match hit {
+            Some(e) => e.2.clone(),
+            None => {
+                let p = convert::path(&ude_boolean::boolean_path(doc, id)?);
+                if self.booleans.len() > 4096 {
+                    self.booleans.clear();
+                }
+                self.booleans.insert(id, (key.0, key.1, p.clone()));
+                p
+            }
+        };
+        Some(Shape {
+            path: Some(path),
+            analytic: None,
+            rule: Fill::NonZero,
+            kind: ShapeKind::Other,
+        })
+    }
 }
 pub use {vello, vello_cpu};
 
@@ -168,12 +195,14 @@ impl<P: Painter> Cx<'_, P> {
 
         let transform = parent * convert::affine(&n.transform);
         let (w, h) = (f64::from(n.size.w), f64::from(n.size.h));
-        let leaf = n.children.is_empty();
+        // A boolean group draws its combined outline; its children are only inputs.
+        let boolean = matches!(n.kind, NodeKind::BooleanOp(_));
+        let leaf = n.children.is_empty() || boolean;
         let clips = n.flags.contains(NodeFlags::CLIPS_CONTENT);
 
         // Only leaves and clipping containers have reliable bounds; other containers
-        // (groups) may have children outside their own box.
-        if leaf || clips {
+        // (groups, booleans) may have children outside their own box.
+        if (leaf || clips) && !boolean {
             let outset = f64::from(n.paint_outset());
             let bounds =
                 transform.transform_rect_bbox(Rect::new(-outset, -outset, w + outset, h + outset));
@@ -195,7 +224,11 @@ impl<P: Painter> Cx<'_, P> {
         } else {
             (1.0, alpha * n.opacity)
         };
-        let own = local_geometry(n);
+        let own = if boolean {
+            self.caches.boolean(self.doc, id)
+        } else {
+            local_geometry(n)
+        };
 
         if let Some(g) = &own {
             self.shadows(
@@ -815,6 +848,50 @@ mod tests {
         cx.flush();
         cx.render(&mut pixmap, &mut resources);
         (pixmap.data_as_u8_slice().to_vec(), stats)
+    }
+
+    #[test]
+    fn boolean_subtract_draws_the_result_not_the_children() {
+        let (mut doc, page) = page_with(vec![]);
+        let red = Paints::new(vec![Paint::solid(Color {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        })]);
+        let blue = Paints::new(vec![Paint::solid(Color {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        })]);
+        let g = doc
+            .build_child(
+                page,
+                Node::new(
+                    NodeKind::BooleanOp(ude_core::scene::BoolOpKind::Subtract),
+                    Symbol::EMPTY,
+                )
+                .with_fills(red),
+            )
+            .unwrap();
+        doc.build_child(
+            g,
+            Node::new(NodeKind::Rectangle, Symbol::EMPTY).with_size(40.0, 40.0),
+        )
+        .unwrap();
+        doc.build_child(
+            g,
+            Node::new(NodeKind::Rectangle, Symbol::EMPTY)
+                .with_transform(ude_core::Affine::translate(10.0, 10.0))
+                .with_size(20.0, 20.0)
+                .with_fills(blue),
+        )
+        .unwrap();
+        let (px, _) = render_cpu(&doc, page, 40, 40);
+        let at = |x: usize, y: usize| &px[(y * 40 + x) * 4..][..4];
+        assert_eq!(at(5, 5), &[255, 0, 0, 255], "group fill outside the hole");
+        assert_eq!(at(20, 20), &[0, 0, 0, 0], "hole is empty, child not drawn");
     }
 
     fn page_with(nodes: Vec<Node>) -> (Document, NodeId) {

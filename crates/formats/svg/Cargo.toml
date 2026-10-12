@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 ude-core = { path = "../../core" }
+ude-boolean = { path = "../../boolean" }
 
 [lints]
 workspace = true

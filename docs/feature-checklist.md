@@ -47,7 +47,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Smooth, sharp and mirrored points
 - ✓ Open and closed paths (drawn and imported)
 - ✗ Path joining and splitting
-- ✗ Boolean union, subtract, intersect and exclude (imported results drawn)
+- ✓ Boolean union, subtract, intersect and exclude (live, Ctrl+Alt+U/S/I/X; Flatten Ctrl+E)
 - ✓ Compound paths (drawn, even-odd and non-zero)
 - ✗ Shape expansion and outlining
 - ~ Stroke alignment and cap styles (alignment editable; caps imported)
@@ -70,7 +70,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Pattern fills (image tile mode only)
 - ✗ Vector textures and grain
 - ~ Editable vector icons (vectors editable as layers, not by point)
-- ✗ Boolean shape editing without destructive flattening
+- ✓ Boolean shape editing without destructive flattening (children stay editable)
 - ✓ Precision coordinate editing (X/Y/W/H/rotation fields)
 - ✗ SVG optimization and cleanup
 
@@ -363,7 +363,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 | Area | Status |
 |---|---|
 | A. Canvas and documents | core done; missing align/distribute, search, tabs, autosave, history |
-| B. Vector drawing | shapes done; missing pen, point editing, booleans, gradient editor |
+| B. Vector drawing | shapes done; missing pen, point editing, gradient editor |
 | C. Raster | placement and export done; no image editing |
 | D. Typography | rendering strong; missing on-canvas editing, text styles, lists |
 | E. Layout | data imported and exported to code; no live auto-layout or constraints |
