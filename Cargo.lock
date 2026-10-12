@@ -1544,6 +1544,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "memory-stats"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c73f5c649995a115e1a0220b35e4df0a1294500477f97a91d0660fb5abeb574a"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3164,6 +3174,7 @@ dependencies = [
  "softbuffer",
  "ude-bench",
  "ude-core",
+ "ude-diagnostics",
  "ude-editor",
  "ude-format-fig",
  "ude-format-native",
@@ -3185,6 +3196,7 @@ name = "ude-bench"
 version = "0.0.1"
 dependencies = [
  "ude-core",
+ "ude-diagnostics",
  "ude-editor",
  "ude-format-native",
  "ude-renderer",
@@ -3222,6 +3234,13 @@ dependencies = [
 [[package]]
 name = "ude-core"
 version = "0.0.1"
+
+[[package]]
+name = "ude-diagnostics"
+version = "0.0.1"
+dependencies = [
+ "memory-stats",
+]
 
 [[package]]
 name = "ude-editor"

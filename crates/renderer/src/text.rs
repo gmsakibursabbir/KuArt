@@ -79,6 +79,11 @@ impl TextEngine {
         v
     }
 
+    /// Text layouts kept between frames.
+    pub fn cached_layouts(&self) -> usize {
+        self.cache.len()
+    }
+
     /// Registers font file bytes (TTF/OTF/TTC). Returns the number of faces added.
     /// Missing-font checks and cached layouts are reset so text re-shapes with the new font.
     pub fn add_font_data(&mut self, bytes: Vec<u8>) -> usize {

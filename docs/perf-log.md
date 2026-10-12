@@ -126,3 +126,42 @@ window-sized pixmap (4 MB at 1280×800). Private memory at launch is 26 MB with 
 via parley + vello_cpu): **first frame 15.0 ms** (system font discovery + layout), **1.6 ms
 with cached layouts**. Text under 4 px on screen is still drawn as bars. App memory at launch
 unchanged (34 MB); fonts load lazily.
+
+## 2026-10-12 · M13 baselines (MVP gate)
+
+Machine: Windows 10 Pro developer workstation (not reference machine A/B), release build.
+Headless scenarios: `cargo run --release -p ude-bench` (CPU renderer, 1280×800, synthetic
+documents, seed 42). RAM from OS counters (`ude-diagnostics`: private bytes). JSON in
+`target/bench/<sha>/<machine>.json`.
+
+| nodes | open (load + index + first frame) | private after open | pan p50 / p95 | drag 50 p95 | undo 500-node move | RAM after close |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1,000 | 5 ms | 8.6 MB | 1.4 / 1.8 ms | 1.3 ms | 0.02 ms | +1.1 MB |
+| 10,000 | 38 ms | 19.1 MB | 1.5 / 1.6 ms | 1.7 ms | 0.02 ms | +1.2 MB |
+| 100,000 | 317 ms | 74.0 MB | 4.5 / 4.8 ms | 4.8 ms | 0.02 ms | +2.0 MB |
+
+All §5 targets are met (open < 0.3 / 1 / 5 s, RAM < 150 / 250 / 700 MB, pan and drag p95
+< 16.7 ms, undo < 5 ms, close within 15 MB).
+
+Full app (window, egui panels, CPU presenter), measured with the OS process counters after a 6 s
+settle:
+
+| | private | working set | idle CPU | startup to first frame (warm) |
+|---|---:|---:|---:|---:|
+| empty document | 34 MB | 43 MB | 0 ms / 5 s | 110–140 ms |
+| 10k-node demo | 34 MB | 43 MB | 0 ms / 5 s | |
+| 100k-node demo | 85 MB | 84 MB | 0 ms / 5 s | |
+
+Targets: empty app < 80 MB private and < 400 ms warm startup; idle CPU < 0.5%. Met.
+
+### Fix: idle redraw loop (≈130% CPU → 0)
+
+* **Found by** the M13 idle measurement: about 4 s of CPU time per 3 s while idle.
+* **Cause:** egui-winit returns `repaint: true` for `WindowEvent::RedrawRequested`, so each frame
+  requested the next one (about 190 frames/s).
+* **Fix:** redraw events are no longer forwarded to egui. The app is event-driven again: 0 frames
+  and 0 ms CPU while idle.
+
+Diagnostics window: **F12** in the app shows private memory and working set (OS), document,
+image cache, text layouts, undo history, spatial index, renderer, last frame time and traversal
+counts.

@@ -1,0 +1,14 @@
+[package]
+name = "ude-diagnostics"
+description = "Process memory counters from the OS (benchmark-plan.md §3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+# Windows: working set and private bytes (PagefileUsage); macOS: resident size.
+memory-stats = "1"
+
+[lints]
+workspace = true

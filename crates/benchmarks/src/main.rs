@@ -1,4 +1,4 @@
-//! `ude-bench [sizes...]`: model, format (M1) and spatial/selection (M3) benchmarks on
+//! `ude-bench [sizes...]`: model, format (M1), spatial/selection (M3) and scenario (M13) benchmarks on
 //! synthetic documents. Writes `target/bench/m1.json` and `m3.json`.
 
 use std::time::Instant;
@@ -6,6 +6,8 @@ use std::time::Instant;
 use ude_bench::{SynthSpec, generate};
 use ude_core::{Affine, HeapSize, History, NodeKind, Op, Prop, Transaction};
 use ude_format_native::{Limits, load, save};
+
+mod scenarios;
 
 struct Row {
     nodes: u32,
@@ -200,6 +202,7 @@ panels frame: {frame:.3} ms with {rows} layer rows expanded (target < 2 ms)"
     println!(
         "render 1280x800 @100% (CPU, real text): first {first:.1} ms, cached layouts {cached:.1} ms, {drawn} layers drawn"
     );
+    scenarios::main();
 }
 
 struct SpatialRow {
@@ -287,6 +290,7 @@ pub fn panels_frame_ms(nodes: u32) -> (usize, f64) {
         missing_fonts: &[],
         missing_families: &[],
         font_status: None,
+        diagnostics: None,
     };
     let mut run = || {
         let input = egui::RawInput {

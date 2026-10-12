@@ -5,7 +5,7 @@
 //!
 //! Controls: wheel = pan (Shift = horizontal), Ctrl+wheel / pinch = zoom at cursor,
 //! middle-drag or Space+drag = pan, Shift+1 = zoom to fit, Shift+0 / Ctrl+0 = 100%,
-//! Ctrl+= / Ctrl+- = zoom, F3 = frame stats in the title bar.
+//! Ctrl+= / Ctrl+- = zoom, F3 = frame stats in the title bar, F12 = diagnostics window.
 //!
 //! Selection: click = select layer (group-first), Ctrl/Cmd+click = deep select,
 //! Shift+click = add/remove, double-click = enter group, drag on empty canvas = marquee,
@@ -142,6 +142,10 @@ struct App {
     proxy: Option<EventLoopProxy<AppEvent>>,
     /// Progress or result of the last font download, shown in the status bar.
     font_status: Option<String>,
+    /// Diagnostics window (F12).
+    diagnostics: bool,
+    /// Duration and statistics of the last presented frame.
+    last_frame: Option<(f64, ude_renderer::FrameStats)>,
     applied_theme: Option<(ThemeChoice, bool)>,
     /// Document revision at the last save (or open); differs when there are unsaved changes.
     saved_revision: u64,
@@ -201,6 +205,8 @@ impl App {
             panel_hover: None,
             proxy: None,
             font_status: None,
+            diagnostics: false,
+            last_frame: None,
             applied_theme: None,
             saved_revision: 0,
             shown_dirty: false,
@@ -286,6 +292,7 @@ impl App {
         window: &Window,
         page: NodeId,
     ) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
+        let diagnostics = self.diagnostics.then(|| self.diagnostic_rows());
         let state = self.egui_state.as_mut()?;
         let input = state.take_egui_input(window);
         let system_dark = window.theme() != Some(winit::window::Theme::Light);
@@ -308,6 +315,7 @@ impl App {
             missing_fonts: &missing,
             missing_families: &families,
             font_status: self.font_status.as_deref(),
+            diagnostics: diagnostics.as_deref(),
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -466,6 +474,7 @@ impl App {
             &mut self.caches,
         ) {
             Ok(FrameResult::Presented(stats)) => {
+                self.last_frame = Some((started.elapsed().as_secs_f64() * 1000.0, stats));
                 if self.options.stats {
                     window.set_title(&format!(
                         "{} — KuArt — {:.0}% — {:.1} ms — drawn {} / visited {} / culled {} — {}",
@@ -592,6 +601,10 @@ impl App {
                     let all: Vec<NodeId> = self.doc.children(parent).to_vec();
                     self.selection.set(all);
                 }
+                self.redraw();
+            }
+            KeyCode::F12 => {
+                self.diagnostics = !self.diagnostics;
                 self.redraw();
             }
             KeyCode::F3 => {
@@ -962,7 +975,10 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let mut egui_consumed = false;
-        if let (Some(state), Some(window)) = (self.egui_state.as_mut(), self.window.as_ref()) {
+        // egui-winit asks for a repaint on RedrawRequested itself, which would redraw forever.
+        if let (Some(state), Some(window)) = (self.egui_state.as_mut(), self.window.as_ref())
+            && !matches!(event, WindowEvent::RedrawRequested)
+        {
             let r = state.on_window_event(window, &event);
             if r.repaint {
                 window.request_redraw();
@@ -1138,5 +1154,65 @@ impl App {
             Err(e) => e,
         });
         self.redraw();
+    }
+}
+
+impl App {
+    /// Rows for the diagnostics window: OS memory counters next to our own accounting.
+    fn diagnostic_rows(&self) -> Vec<(&'static str, String)> {
+        let mb = |b: usize| format!("{:.1} MB", b as f64 / 1_048_576.0);
+        let mut rows = Vec::new();
+        match ude_diagnostics::process_memory() {
+            Some(m) => {
+                rows.push(("Private memory", format!("{:.1} MB", m.private_mb())));
+                rows.push(("Working set", format!("{:.1} MB", m.resident_mb())));
+            }
+            None => rows.push(("Process memory", "unavailable".into())),
+        }
+        let nodes = self.doc.descendants(self.doc.root()).count();
+        rows.push((
+            "Document",
+            format!("{nodes} nodes · {}", mb(self.doc.memory_report().total())),
+        ));
+        rows.push(("Assets", format!("{}", self.doc.assets.len())));
+        rows.push((
+            "Image cache",
+            format!(
+                "{} / {}",
+                mb(self.caches.images.used_bytes()),
+                mb(self.caches.images.budget())
+            ),
+        ));
+        rows.push((
+            "Text layouts",
+            format!("{} cached", self.caches.text.cached_layouts()),
+        ));
+        rows.push((
+            "Undo history",
+            format!(
+                "{} steps · {}",
+                self.history.len(),
+                mb(self.history.bytes())
+            ),
+        ));
+        if let Some(index) = &self.index {
+            rows.push((
+                "Spatial index",
+                format!("{} nodes · {}", index.len(), mb(index.heap_bytes())),
+            ));
+        }
+        let renderer = self.backend.as_ref().map(Backend::name).unwrap_or_default();
+        rows.push(("Renderer", renderer.to_string()));
+        if let Some((ms, s)) = self.last_frame {
+            rows.push(("Last frame", format!("{ms:.1} ms")));
+            rows.push((
+                "Traversal",
+                format!(
+                    "{} drawn · {} visited · {} culled · {} layers",
+                    s.drawn, s.visited, s.culled, s.layers
+                ),
+            ));
+        }
+        rows
     }
 }

@@ -58,6 +58,8 @@ pub struct Status<'a> {
     pub missing_families: &'a [&'a str],
     /// Progress or result of the last font download.
     pub font_status: Option<&'a str>,
+    /// Rows for the diagnostics window (F12); `None` hides it.
+    pub diagnostics: Option<&'a [(&'a str, String)]>,
 }
 
 #[derive(Default)]
@@ -178,6 +180,26 @@ impl Panels {
                 });
             });
 
+        if let Some(rows) = status.diagnostics {
+            egui::Window::new("Diagnostics")
+                .default_pos(egui::pos2(260.0, 60.0))
+                .resizable(false)
+                .collapsible(true)
+                .show(root.ctx(), |ui| {
+                    egui::Grid::new("diagnostics")
+                        .num_columns(2)
+                        .spacing([16.0, 4.0])
+                        .show(ui, |ui| {
+                            for (label, value) in rows {
+                                ui.colored_label(t.text_muted, *label);
+                                ui.monospace(value);
+                                ui.end_row();
+                            }
+                        });
+                    ui.colored_label(t.text_muted, "F12 to close");
+                });
+        }
+
         Panel::left("layers")
             .default_size(240.0)
             .size_range(160.0..=480.0)
@@ -242,6 +264,7 @@ mod tests {
             missing_fonts: &[],
             missing_families: &[],
             font_status: None,
+            diagnostics: None,
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

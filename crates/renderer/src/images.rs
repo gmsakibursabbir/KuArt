@@ -71,6 +71,10 @@ impl ImageCache {
     }
 
     /// Bytes of decoded pixels currently held.
+    pub fn budget(&self) -> usize {
+        self.budget
+    }
+
     pub fn used_bytes(&self) -> usize {
         self.used
     }
