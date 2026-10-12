@@ -408,10 +408,38 @@ impl Panels {
                             RichText::new(format!("{:.0}%", status.zoom * 100.0))
                                 .color(t.text_secondary),
                             |ui| {
-                                menu_item(ui, "Zoom in", "Ctrl+=", actions, Action::ZoomIn);
-                                menu_item(ui, "Zoom out", "Ctrl+-", actions, Action::ZoomOut);
-                                menu_item(ui, "Zoom to fit", "Shift+1", actions, Action::ZoomToFit);
-                                menu_item(ui, "Zoom to 100%", "Ctrl+0", actions, Action::Zoom100);
+                                menu_item(
+                                    ui,
+                                    icons::ZOOM_IN,
+                                    "Zoom in",
+                                    "Ctrl+=",
+                                    actions,
+                                    Action::ZoomIn,
+                                );
+                                menu_item(
+                                    ui,
+                                    icons::ZOOM_OUT,
+                                    "Zoom out",
+                                    "Ctrl+-",
+                                    actions,
+                                    Action::ZoomOut,
+                                );
+                                menu_item(
+                                    ui,
+                                    icons::MAXIMIZE,
+                                    "Zoom to fit",
+                                    "Shift+1",
+                                    actions,
+                                    Action::ZoomToFit,
+                                );
+                                menu_item(
+                                    ui,
+                                    icons::SCAN_SEARCH,
+                                    "Zoom to 100%",
+                                    "Ctrl+0",
+                                    actions,
+                                    Action::Zoom100,
+                                );
                             },
                         );
                         ui.add_enabled_ui(status.can_redo, |ui| {
@@ -458,10 +486,31 @@ impl Panels {
 
         ui.menu_button(menu("File"), |ui| {
             ui.set_width(220.0);
-            menu_item(ui, "New design", "Ctrl+N", actions, Action::New);
-            menu_item(ui, "Open…", "Ctrl+O", actions, Action::Open);
-            menu_item(ui, "Import…", "", actions, Action::Import);
-            ui.menu_button("Open recent", |ui| {
+            menu_item(
+                ui,
+                icons::FILE_PLUS,
+                "New design",
+                "Ctrl+N",
+                actions,
+                Action::New,
+            );
+            menu_item(
+                ui,
+                icons::FOLDER_OPEN,
+                "Open…",
+                "Ctrl+O",
+                actions,
+                Action::Open,
+            );
+            menu_item(
+                ui,
+                icons::FILE_INPUT,
+                "Import…",
+                "",
+                actions,
+                Action::Import,
+            );
+            ui.menu_button(submenu(ui, icons::CLOCK, "Open recent"), |ui| {
                 if status.recents.is_empty() {
                     ui.label(RichText::new("No recent files").color(t.text_muted));
                 }
@@ -477,33 +526,84 @@ impl Panels {
                 }
             });
             ui.separator();
-            menu_item(ui, "Save", "Ctrl+S", actions, Action::Save);
-            menu_item(ui, "Save as…", "Ctrl+Shift+S", actions, Action::SaveAs);
-            menu_item(ui, "Export…", "Ctrl+Shift+E", actions, Action::Export);
+            menu_item(ui, icons::SAVE, "Save", "Ctrl+S", actions, Action::Save);
+            menu_item(
+                ui,
+                icons::SAVE_ALL,
+                "Save as…",
+                "Ctrl+Shift+S",
+                actions,
+                Action::SaveAs,
+            );
+            menu_item(
+                ui,
+                icons::DOWNLOAD,
+                "Export…",
+                "Ctrl+Shift+E",
+                actions,
+                Action::Export,
+            );
             ui.separator();
-            menu_item(ui, "Add page", "", actions, Action::AddPage);
+            menu_item(
+                ui,
+                icons::FILE_PLUS_2,
+                "Add page",
+                "",
+                actions,
+                Action::AddPage,
+            );
             ui.separator();
-            menu_item(ui, "Back to files", "", actions, Action::Home);
+            menu_item(ui, icons::HOUSE, "Back to files", "", actions, Action::Home);
         });
         ui.menu_button(menu("Edit"), |ui| {
             ui.set_width(220.0);
-            menu_item(ui, "Undo", "Ctrl+Z", actions, Action::Undo);
-            menu_item(ui, "Redo", "Ctrl+Y", actions, Action::Redo);
+            menu_item(ui, icons::UNDO_2, "Undo", "Ctrl+Z", actions, Action::Undo);
+            menu_item(ui, icons::REDO_2, "Redo", "Ctrl+Y", actions, Action::Redo);
             ui.separator();
-            menu_item(ui, "Copy", "Ctrl+C", actions, Action::Edit(Edit::Copy));
-            menu_item(ui, "Cut", "Ctrl+X", actions, Action::Edit(Edit::Cut));
-            menu_item(ui, "Paste", "Ctrl+V", actions, Action::Edit(Edit::Paste));
             menu_item(
                 ui,
+                icons::COPY,
+                "Copy",
+                "Ctrl+C",
+                actions,
+                Action::Edit(Edit::Copy),
+            );
+            menu_item(
+                ui,
+                icons::SCISSORS,
+                "Cut",
+                "Ctrl+X",
+                actions,
+                Action::Edit(Edit::Cut),
+            );
+            menu_item(
+                ui,
+                icons::CLIPBOARD_PASTE,
+                "Paste",
+                "Ctrl+V",
+                actions,
+                Action::Edit(Edit::Paste),
+            );
+            menu_item(
+                ui,
+                icons::COPY_PLUS,
                 "Duplicate",
                 "Ctrl+D",
                 actions,
                 Action::Edit(Edit::Duplicate),
             );
-            menu_item(ui, "Delete", "Del", actions, Action::Edit(Edit::Delete));
+            menu_item(
+                ui,
+                icons::TRASH_2,
+                "Delete",
+                "Del",
+                actions,
+                Action::Edit(Edit::Delete),
+            );
             ui.separator();
             menu_item(
                 ui,
+                icons::SQUARE_DASHED_MOUSE_POINTER,
                 "Select all",
                 "Ctrl+A",
                 actions,
@@ -512,15 +612,50 @@ impl Panels {
         });
         ui.menu_button(menu("View"), |ui| {
             ui.set_width(220.0);
-            menu_item(ui, "Zoom in", "Ctrl+=", actions, Action::ZoomIn);
-            menu_item(ui, "Zoom out", "Ctrl+-", actions, Action::ZoomOut);
-            menu_item(ui, "Zoom to fit", "Shift+1", actions, Action::ZoomToFit);
-            menu_item(ui, "Zoom to 100%", "Ctrl+0", actions, Action::Zoom100);
+            menu_item(
+                ui,
+                icons::ZOOM_IN,
+                "Zoom in",
+                "Ctrl+=",
+                actions,
+                Action::ZoomIn,
+            );
+            menu_item(
+                ui,
+                icons::ZOOM_OUT,
+                "Zoom out",
+                "Ctrl+-",
+                actions,
+                Action::ZoomOut,
+            );
+            menu_item(
+                ui,
+                icons::MAXIMIZE,
+                "Zoom to fit",
+                "Shift+1",
+                actions,
+                Action::ZoomToFit,
+            );
+            menu_item(
+                ui,
+                icons::SCAN_SEARCH,
+                "Zoom to 100%",
+                "Ctrl+0",
+                actions,
+                Action::Zoom100,
+            );
             ui.separator();
             if ui.checkbox(&mut self.dev_mode, "Dev Mode").clicked() {
                 ui.close();
             }
-            menu_item(ui, "Diagnostics", "F12", actions, Action::ToggleDiagnostics);
+            menu_item(
+                ui,
+                icons::ACTIVITY,
+                "Diagnostics",
+                "F12",
+                actions,
+                Action::ToggleDiagnostics,
+            );
             ui.separator();
             ui.label(RichText::new("Theme").size(11.0).color(t.text_muted));
             for c in ThemeChoice::ALL {
@@ -532,9 +667,17 @@ impl Panels {
         });
         ui.menu_button(menu("Object"), |ui| {
             ui.set_width(220.0);
-            menu_item(ui, "Group", "Ctrl+G", actions, Action::Edit(Edit::Group));
             menu_item(
                 ui,
+                icons::GROUP,
+                "Group",
+                "Ctrl+G",
+                actions,
+                Action::Edit(Edit::Group),
+            );
+            menu_item(
+                ui,
+                icons::UNGROUP,
                 "Ungroup",
                 "Ctrl+Shift+G",
                 actions,
@@ -543,6 +686,7 @@ impl Panels {
             ui.separator();
             menu_item(
                 ui,
+                icons::BRING_TO_FRONT,
                 "Bring forward",
                 "Ctrl+]",
                 actions,
@@ -550,36 +694,68 @@ impl Panels {
             );
             menu_item(
                 ui,
+                icons::SEND_TO_BACK,
                 "Send backward",
                 "Ctrl+[",
                 actions,
                 Action::Edit(Edit::SendBackward),
             );
             ui.separator();
-            ui.menu_button("Align", |ui| {
+            ui.menu_button(submenu(ui, icons::ALIGN_CENTER_VERTICAL, "Align"), |ui| {
                 use ude_editor::Align as A;
-                menu_item(ui, "Left", "Alt+A", actions, Action::Align(A::Left));
                 menu_item(
                     ui,
+                    icons::ALIGN_START_VERTICAL,
+                    "Left",
+                    "Alt+A",
+                    actions,
+                    Action::Align(A::Left),
+                );
+                menu_item(
+                    ui,
+                    icons::ALIGN_CENTER_VERTICAL,
                     "Horizontal centers",
                     "Alt+H",
                     actions,
                     Action::Align(A::HCenter),
                 );
-                menu_item(ui, "Right", "Alt+D", actions, Action::Align(A::Right));
-                ui.separator();
-                menu_item(ui, "Top", "Alt+W", actions, Action::Align(A::Top));
                 menu_item(
                     ui,
+                    icons::ALIGN_END_VERTICAL,
+                    "Right",
+                    "Alt+D",
+                    actions,
+                    Action::Align(A::Right),
+                );
+                ui.separator();
+                menu_item(
+                    ui,
+                    icons::ALIGN_START_HORIZONTAL,
+                    "Top",
+                    "Alt+W",
+                    actions,
+                    Action::Align(A::Top),
+                );
+                menu_item(
+                    ui,
+                    icons::ALIGN_CENTER_HORIZONTAL,
                     "Vertical centers",
                     "Alt+V",
                     actions,
                     Action::Align(A::VCenter),
                 );
-                menu_item(ui, "Bottom", "Alt+S", actions, Action::Align(A::Bottom));
+                menu_item(
+                    ui,
+                    icons::ALIGN_END_HORIZONTAL,
+                    "Bottom",
+                    "Alt+S",
+                    actions,
+                    Action::Align(A::Bottom),
+                );
                 ui.separator();
                 menu_item(
                     ui,
+                    icons::ALIGN_HORIZONTAL_SPACE_BETWEEN,
                     "Distribute horizontally",
                     "Alt+Shift+H",
                     actions,
@@ -587,6 +763,7 @@ impl Panels {
                 );
                 menu_item(
                     ui,
+                    icons::ALIGN_VERTICAL_SPACE_BETWEEN,
                     "Distribute vertically",
                     "Alt+Shift+V",
                     actions,
@@ -661,15 +838,65 @@ impl Panels {
     }
 }
 
-/// Menu entry: label on the left, shortcut on the right, full menu width (like desktop menus).
-fn menu_item(ui: &mut Ui, label: &str, shortcut: &str, actions: &mut Vec<Action>, action: Action) {
-    let mut button = egui::Button::new(label)
-        .frame(false)
-        .min_size(egui::vec2(ui.available_width(), 24.0));
-    if !shortcut.is_empty() {
-        button = button.shortcut_text(RichText::new(shortcut).size(11.0).weak());
+/// Submenu title with an icon, aligned with [`menu_item`] rows.
+fn submenu(ui: &Ui, glyph: &str, label: &str) -> egui::text::LayoutJob {
+    let v = ui.visuals();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        glyph,
+        0.0,
+        egui::TextFormat::simple(widgets::icon_font(14.0), v.weak_text_color()),
+    );
+    job.append(
+        label,
+        9.0,
+        egui::TextFormat::simple(FontId::proportional(12.5), v.text_color()),
+    );
+    job
+}
+
+/// Menu entry: icon, label, and the shortcut right-aligned, across the menu width.
+fn menu_item(
+    ui: &mut Ui,
+    glyph: &str,
+    label: &str,
+    shortcut: &str,
+    actions: &mut Vec<Action>,
+    action: Action,
+) {
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 26.0), egui::Sense::click());
+    let v = ui.visuals();
+    let (text, weak) = (v.text_color(), v.weak_text_color());
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 4.0, v.widgets.hovered.weak_bg_fill);
     }
-    if ui.add(button).clicked() {
+    let p = ui.painter();
+    p.text(
+        egui::pos2(rect.left() + 14.0, rect.center().y),
+        Align2::CENTER_CENTER,
+        glyph,
+        widgets::icon_font(14.0),
+        weak,
+    );
+    p.text(
+        egui::pos2(rect.left() + 30.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::proportional(12.5),
+        text,
+    );
+    if !shortcut.is_empty() {
+        p.text(
+            egui::pos2(rect.right() - 8.0, rect.center().y),
+            Align2::RIGHT_CENTER,
+            shortcut,
+            FontId::proportional(11.0),
+            weak,
+        );
+    }
+    if resp.clicked() {
         actions.push(action);
         ui.close();
     }
