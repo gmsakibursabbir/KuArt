@@ -10,6 +10,7 @@
 //! * every mutation goes through [`Document::apply`] returning an inverse [`Op`].
 
 pub mod assets;
+pub mod comments;
 pub mod document;
 pub mod geometry;
 pub mod history;

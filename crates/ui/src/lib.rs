@@ -3,6 +3,7 @@
 //! bar; and a home screen with recent files. Panels read the document and return [`Action`]s;
 //! the app applies them through history.
 
+mod comments;
 mod devmode;
 mod home;
 pub mod icons;
@@ -144,6 +145,13 @@ pub enum Action {
     ZoomOut,
     Zoom100,
     ToggleDiagnostics,
+    /// New comment pinned at the centre of the view.
+    AddComment(String),
+    ReplyComment(usize, String),
+    ResolveComment(usize, bool),
+    DeleteComment(usize),
+    /// Centre the view on a comment.
+    FocusComment(usize),
 }
 
 /// Read-only facts the bars display.
@@ -174,7 +182,10 @@ pub struct Panels {
     pub layers: LayersPanel,
     /// Right panel shows Dev Mode (code and inspect) instead of Design.
     pub dev_mode: bool,
+    /// Right panel shows comments.
+    pub comments_open: bool,
     inspector: Inspector,
+    comments: comments::CommentsPanel,
     dev: devmode::DevMode,
     home: home::Home,
 }
@@ -276,14 +287,32 @@ impl Panels {
                     .inner_margin(egui::Margin::symmetric(12, 8)),
             )
             .show_inside(root, |ui| {
-                let mut tab = usize::from(self.dev_mode);
-                segmented(ui, t, &["Design", "Dev Mode"], &mut tab);
+                let mut tab = if self.comments_open {
+                    2
+                } else {
+                    usize::from(self.dev_mode)
+                };
+                let open = doc.comments.iter().filter(|c| !c.resolved).count();
+                let comments_label = if open > 0 {
+                    format!("Comments {open}")
+                } else {
+                    "Comments".to_owned()
+                };
+                segmented(ui, t, &["Design", "Dev Mode", &comments_label], &mut tab);
                 self.dev_mode = tab == 1;
+                self.comments_open = tab == 2;
                 egui::ScrollArea::vertical()
                     .id_salt("right_scroll")
                     .auto_shrink(false)
                     .show(ui, |ui| {
-                        if self.dev_mode {
+                        if self.comments_open {
+                            let page_index = doc
+                                .children(doc.root())
+                                .iter()
+                                .position(|&p| p == page)
+                                .unwrap_or(0) as u32;
+                            self.comments.ui(ui, doc, page_index, t, &mut actions);
+                        } else if self.dev_mode {
                             self.dev.ui(ui, doc, selection, page, t);
                         } else {
                             self.inspector.ui(ui, doc, selection, t, &mut actions);

@@ -220,10 +220,10 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 ✗ Not started.
 
 ## J. Collaboration and feedback
-- ✗ Real-time multiplayer editing (P2P WebRTC planned)
+- ✗ Real-time multiplayer editing (P2P WebRTC designed: [collaboration.md](collaboration.md))
 - ✗ Live collaborator cursors · presence · follow · selection indicators
-- ✗ Live comments on canvas (comments model in progress: read from PDF/AI/SVG files)
-- ✗ Threaded discussions · mentions · resolve/reopen · notifications · audio
+- ~ Comments on canvas (pins, Comments tab, add/reply/resolve/delete, saved in .krt; read from PDF, Illustrator, Photoshop notes, SVG and PNG/JPEG metadata; not live-shared yet)
+- ~ Threaded discussions (replies) · ✓ resolve/reopen · ✗ mentions · ✗ notifications · ✗ audio
 - ✗ Shared documents, workspaces, libraries, roles, guests, permissions, links, passwords
 - ✗ Feedback mode · presentation mode · review links · approvals · status labels
 - ✗ Activity feed · change notifications · conflict handling · offline sync · team assets
@@ -336,8 +336,9 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 
 ## S. Professional workflow and productivity
 - ✗ Quick actions and command palette
+- ✓ Global menu bar (File, Edit, View, Object, Help)
 - ~ Context menus (home screen cards only)
-- ✗ Custom toolbars · ✗ dockable panels
+- ~ Custom toolbars (floating tool pill) · ✗ dockable panels
 - ✓ Panel resizing (left and right panels)
 - ✗ Workspace presets · ✗ customizable inspector
 - ✓ Recent documents · ✗ pinned documents

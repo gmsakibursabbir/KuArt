@@ -35,6 +35,8 @@ const T_ASET: [u8; 4] = *b"ASET";
 const T_ROOT: [u8; 4] = *b"ROOT";
 const T_PAGE: [u8; 4] = *b"PAGE";
 const T_BLOB: [u8; 4] = *b"BLOB";
+/// Comments (optional; absent when there are none).
+const T_CMNT: [u8; 4] = *b"CMNT";
 /// Smallest possible encoded node record; bounds forged node counts.
 const MIN_NODE_BYTES: u64 = 40;
 
@@ -214,6 +216,13 @@ pub fn save(doc: &Document) -> Result<Vec<u8>, NativeError> {
     ];
     chunks.extend(page_chunks);
     chunks.extend(blobs);
+    if !doc.comments.is_empty() {
+        chunks.push(OutChunk {
+            tag: T_CMNT,
+            data: encode_comments(&doc.comments),
+            compress: true,
+        });
+    }
     for (tag, data) in &doc.meta.preserved_sections {
         chunks.push(OutChunk {
             tag: *tag,
@@ -363,7 +372,10 @@ pub fn load(file: &[u8], limits: &Limits) -> Result<Document, NativeError> {
         return Err(NativeError::Corrupt("node count mismatch"));
     }
 
-    const KNOWN: [[u8; 4]; 6] = [T_META, T_STRS, T_ASET, T_ROOT, T_PAGE, T_BLOB];
+    if let Some(c) = table.iter().find(|c| c.tag == T_CMNT) {
+        doc.comments = decode_comments(&read_chunk(file, c)?)?;
+    }
+    const KNOWN: [[u8; 4]; 7] = [T_META, T_STRS, T_ASET, T_ROOT, T_PAGE, T_BLOB, T_CMNT];
     for c in table.iter().filter(|c| !KNOWN.contains(&c.tag)) {
         doc.meta
             .preserved_sections
@@ -373,6 +385,61 @@ pub fn load(file: &[u8], limits: &Limits) -> Result<Document, NativeError> {
     let _ = doc.take_changes();
     doc.shrink_to_fit();
     Ok(doc)
+}
+
+fn encode_comments(comments: &[ude_core::comments::Comment]) -> Vec<u8> {
+    let mut w = Writer::default();
+    w.len(comments.len());
+    for c in comments {
+        w.record(|w| {
+            w.var(u64::from(c.page));
+            w.f32(c.x);
+            w.f32(c.y);
+            w.str(&c.author);
+            w.str(&c.text);
+            w.var(c.created);
+            w.bool(c.resolved);
+            w.str(&c.source);
+            w.len(c.replies.len());
+            for r in &c.replies {
+                w.str(&r.author);
+                w.str(&r.text);
+                w.var(r.created);
+            }
+        });
+    }
+    w.buf
+}
+
+fn decode_comments(data: &[u8]) -> Result<Vec<ude_core::comments::Comment>, NativeError> {
+    use ude_core::comments::{Comment, Reply};
+    let mut r = Reader::new(data);
+    let n = r.count(1)?;
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        let mut c = r.record()?;
+        let mut comment = Comment {
+            page: u32::try_from(c.var()?).map_err(|_| NativeError::Corrupt("comment page"))?,
+            x: c.f32()?,
+            y: c.f32()?,
+            author: c.str()?.to_owned(),
+            text: c.str()?.to_owned(),
+            created: c.var()?,
+            resolved: c.bool()?,
+            source: c.str()?.to_owned(),
+            replies: Vec::new(),
+        };
+        let replies = c.count(3)?;
+        for _ in 0..replies {
+            comment.replies.push(Reply {
+                author: c.str()?.to_owned(),
+                text: c.str()?.to_owned(),
+                created: c.var()?,
+            });
+        }
+        out.push(comment);
+    }
+    Ok(out)
 }
 
 /// Header and chunk table only; does not decode payloads.

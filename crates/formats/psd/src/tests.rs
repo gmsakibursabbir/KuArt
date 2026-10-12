@@ -296,3 +296,65 @@ fn channels_unpack(src: &[u8], len: usize, out: &mut Vec<u8>) {
     .unwrap();
     out.extend(plane);
 }
+
+#[test]
+fn photoshop_notes_become_comments() {
+    // A flat file whose layer section holds only a global `Anno` block.
+    let mut note = Vec::new();
+    note.extend(b"txtA");
+    note.extend([1, 0, 0, 0]); // open, flags, optional blocks
+    for v in [40i32, 30, 60, 50] {
+        note.extend(v.to_be_bytes()); // icon rect: top, left, bottom, right
+    }
+    note.extend([0u8; 16 + 10]); // popup rect, colour
+    for s in ["Ana", "Note", "D:2026"] {
+        note.push(s.len() as u8);
+        note.extend(s.as_bytes());
+        if s.len() % 2 == 0 {
+            note.push(0);
+        }
+    }
+    let text: Vec<u8> = [0xFE, 0xFF]
+        .into_iter()
+        .chain(
+            "Tighten the kerning"
+                .encode_utf16()
+                .flat_map(u16::to_be_bytes),
+        )
+        .collect();
+    note.extend(((text.len() + 4) as u32).to_be_bytes());
+    note.extend(b"txtC");
+    note.extend(&text);
+    let mut anno = vec![0, 2, 0, 1];
+    anno.extend(1u32.to_be_bytes());
+    anno.extend(((note.len() + 4) as u32).to_be_bytes());
+    anno.extend(&note);
+
+    let mut block = Vec::new();
+    block.extend(b"8BIM");
+    block.extend(b"Anno");
+    block.extend((anno.len() as u32).to_be_bytes());
+    block.extend(&anno);
+    while block.len() % 4 != 0 {
+        block.push(0);
+    }
+
+    let mut f = psd(4, 3, &[]);
+    // Replace the empty layer section (u32 0 at offset 34) with: info len 0, mask len 0, blocks.
+    let mut section = Vec::new();
+    section.extend(0u32.to_be_bytes());
+    section.extend(0u32.to_be_bytes());
+    section.extend(&block);
+    let mut out = f[..34].to_vec();
+    out.extend((section.len() as u32).to_be_bytes());
+    out.extend(&section);
+    out.extend(f.split_off(38));
+    let im = import(&out, "notes.psd").unwrap();
+    assert_eq!(im.doc.comments.len(), 1);
+    let c = &im.doc.comments[0];
+    assert_eq!(
+        (c.author.as_str(), c.text.as_str()),
+        ("Ana", "Tighten the kerning")
+    );
+    assert_eq!((c.x, c.y), (30.0, 40.0));
+}

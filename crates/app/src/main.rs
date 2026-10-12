@@ -450,6 +450,30 @@ impl App {
                 Action::SelectPage(p) => self.select_page(p),
                 Action::AddPage => self.add_page(),
                 Action::Edit(e) => self.edit(e),
+                Action::AddComment(text) => self.add_comment(text),
+                Action::ReplyComment(i, text) => {
+                    if let Some(c) = self.doc.comments.get_mut(i) {
+                        c.replies.push(ude_core::comments::Reply {
+                            author: user_name(),
+                            text,
+                            created: ude_core::comments::now(),
+                        });
+                        self.doc.mark_changed();
+                    }
+                }
+                Action::ResolveComment(i, resolved) => {
+                    if let Some(c) = self.doc.comments.get_mut(i) {
+                        c.resolved = resolved;
+                        self.doc.mark_changed();
+                    }
+                }
+                Action::DeleteComment(i) => {
+                    if i < self.doc.comments.len() {
+                        self.doc.comments.remove(i);
+                        self.doc.mark_changed();
+                    }
+                }
+                Action::FocusComment(i) => self.focus_comment(i),
             }
             self.redraw();
         }
@@ -512,6 +536,19 @@ impl App {
         self.selection_box = overlay.selection_box.map(|o| o.quad);
         let [ar, ag, ab, _] = self.panels.theme.tokens(system_dark).accent.to_array();
         overlay.accent = Some(Color::from_rgba8(ar, ag, ab, 255));
+        let page_index = self.page_index();
+        overlay.pins = self
+            .doc
+            .comments
+            .iter()
+            .filter(|c| c.page == page_index && (!c.resolved || self.panels.comments_open))
+            .map(|c| {
+                (
+                    view.transform * Point::new(f64::from(c.x), f64::from(c.y)),
+                    c.resolved,
+                )
+            })
+            .collect();
         let dirty = self.doc.revision() != self.saved_revision;
         if dirty != self.shown_dirty && !self.options.stats {
             self.shown_dirty = dirty;
@@ -1391,5 +1428,60 @@ impl App {
                 }
             }
         }
+    }
+}
+
+/// Name for new comments: the OS user name.
+fn user_name() -> String {
+    std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "You".into())
+}
+
+impl App {
+    /// Index of the current page among the document's pages (comments are keyed by it).
+    fn page_index(&self) -> u32 {
+        self.page
+            .and_then(|p| {
+                self.doc
+                    .children(self.doc.root())
+                    .iter()
+                    .position(|&c| c == p)
+            })
+            .unwrap_or(0) as u32
+    }
+
+    /// Pins a new comment at the centre of the visible canvas.
+    fn add_comment(&mut self, text: String) {
+        let center = self.doc_point(self.canvas.center());
+        self.doc.comments.push(ude_core::comments::Comment {
+            page: self.page_index(),
+            x: center.x as f32,
+            y: center.y as f32,
+            author: user_name(),
+            text,
+            created: ude_core::comments::now(),
+            ..Default::default()
+        });
+        self.doc.mark_changed();
+        self.redraw();
+    }
+
+    /// Centres the view on comment `i` (switching to its page).
+    fn focus_comment(&mut self, i: usize) {
+        let Some(c) = self.doc.comments.get(i) else {
+            return;
+        };
+        let (page, at) = (c.page as usize, Point::new(f64::from(c.x), f64::from(c.y)));
+        if let Some(&p) = self.doc.children(self.doc.root()).get(page)
+            && Some(p) != self.page
+        {
+            self.select_page(p);
+            self.fitted = true;
+        }
+        let s = self.scale_factor();
+        let target = self.canvas.center();
+        self.camera.pan = target.to_vec2() - at.to_vec2() * (self.camera.zoom * s);
+        self.redraw();
     }
 }

@@ -181,3 +181,43 @@ fn fonts_and_cmaps() {
     assert_eq!(map[&0x46], "c");
     assert_eq!(map[&0x51], "\u{1f44b}");
 }
+
+#[test]
+fn annotations_become_comments() {
+    let bytes = sample_pdf();
+    let mut doc = lopdf::Document::load_mem(&bytes).unwrap();
+    let page_id = *doc.get_pages().values().next().unwrap();
+    let note = doc.add_object(lopdf::dictionary! {
+        "Type" => "Annot", "Subtype" => "Text",
+        "Rect" => vec![10.into(), 80.into(), 30.into(), 95.into()],
+        "Contents" => Object::string_literal("Fix spacing"),
+        "T" => Object::string_literal("Ana"),
+        "M" => Object::string_literal("D:20261012093000Z"),
+    });
+    let reply = doc.add_object(lopdf::dictionary! {
+        "Type" => "Annot", "Subtype" => "Text",
+        "Rect" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+        "Contents" => Object::String(vec![0xFE, 0xFF, 0, b'O', 0, b'K'], lopdf::StringFormat::Hexadecimal),
+        "T" => Object::string_literal("Ben"),
+        "IRT" => note,
+    });
+    let link = doc.add_object(lopdf::dictionary! { "Type" => "Annot", "Subtype" => "Link", "Contents" => Object::string_literal("x") });
+    doc.get_dictionary_mut(page_id)
+        .unwrap()
+        .set("Annots", vec![note.into(), reply.into(), link.into()]);
+    let mut out = Vec::new();
+    doc.save_to(&mut out).unwrap();
+
+    let im = import(&out, "c.pdf", false).unwrap();
+    assert_eq!(im.doc.comments.len(), 1, "links skipped, reply threaded");
+    let c = &im.doc.comments[0];
+    assert_eq!((c.author.as_str(), c.text.as_str()), ("Ana", "Fix spacing"));
+    assert_eq!(
+        (c.x, c.y),
+        (10.0, 5.0),
+        "top-left of the rect, y flipped (page height 100)"
+    );
+    assert_eq!(c.created, 1_791_797_400);
+    assert_eq!(c.replies.len(), 1);
+    assert_eq!(c.replies[0].text, "OK");
+}

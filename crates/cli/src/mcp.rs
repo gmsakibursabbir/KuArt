@@ -248,6 +248,64 @@ impl Session {
                 }
                 Ok(out)
             }
+            "list_comments" => {
+                let list: Vec<Value> = self
+                    .doc
+                    .comments
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        json!({
+                            "index": i, "page": c.page, "x": c.x, "y": c.y,
+                            "author": c.author, "text": c.text, "created": c.created,
+                            "resolved": c.resolved, "source": c.source,
+                            "replies": c.replies.iter().map(|r| json!({"author": r.author, "text": r.text, "created": r.created})).collect::<Vec<_>>(),
+                        })
+                    })
+                    .collect();
+                Ok(vec![text(
+                    serde_json::to_string_pretty(&list).unwrap_or_default(),
+                )])
+            }
+            "add_comment" => {
+                let comment = ude_core::comments::Comment {
+                    page: a.get("page").and_then(Value::as_u64).unwrap_or(0) as u32,
+                    x: opt_f32(a, "x").unwrap_or(0.0),
+                    y: opt_f32(a, "y").unwrap_or(0.0),
+                    author: opt_str(a, "author").unwrap_or("AI agent").to_owned(),
+                    text: req_str(a, "text")?.to_owned(),
+                    created: ude_core::comments::now(),
+                    ..Default::default()
+                };
+                self.doc.comments.push(comment);
+                self.doc.mark_changed();
+                Ok(vec![text(format!(
+                    "added comment {}",
+                    self.doc.comments.len() - 1
+                ))])
+            }
+            "reply_comment" | "resolve_comment" => {
+                let i = a
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .ok_or("missing numeric \"index\"")? as usize;
+                let c = self
+                    .doc
+                    .comments
+                    .get_mut(i)
+                    .ok_or_else(|| format!("no comment {i} (call list_comments)"))?;
+                if name == "reply_comment" {
+                    c.replies.push(ude_core::comments::Reply {
+                        author: opt_str(a, "author").unwrap_or("AI agent").to_owned(),
+                        text: req_str(a, "text")?.to_owned(),
+                        created: ude_core::comments::now(),
+                    });
+                } else {
+                    c.resolved = a.get("resolved").and_then(Value::as_bool).unwrap_or(true);
+                }
+                self.doc.mark_changed();
+                Ok(vec![text(format!("updated comment {i}"))])
+            }
             _ => Err(format!("unknown tool '{name}'")),
         }
     }
@@ -643,6 +701,30 @@ fn tool_list() -> Value {
     };
     json!([
         tool(
+            "list_comments",
+            "All comments with replies (from KuArt or read from imported PDF, Illustrator, Photoshop, SVG and image files).",
+            json!({}),
+            &[],
+        ),
+        tool(
+            "add_comment",
+            "Add a comment pinned at x, y (page coordinates) on a page (index, default 0).",
+            json!({"text": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"}, "page": {"type": "integer"}, "author": {"type": "string"}}),
+            &["text"],
+        ),
+        tool(
+            "reply_comment",
+            "Reply to a comment.",
+            json!({"index": {"type": "integer"}, "text": {"type": "string"}, "author": {"type": "string"}}),
+            &["index", "text"],
+        ),
+        tool(
+            "resolve_comment",
+            "Resolve (or reopen with resolved=false) a comment.",
+            json!({"index": {"type": "integer"}, "resolved": {"type": "boolean"}}),
+            &["index"],
+        ),
+        tool(
             "generate_code",
             "Turn a node (default: first page) into code: html (page with CSS), css, tailwind, react (JSX + CSS), vue (SFC) or tokens (CSS variables + JSON). Auto layout and evenly stacked layers become flexbox.",
             json!({"id": id, "target": {"type": "string", "enum": ["html", "css", "tailwind", "react", "vue", "tokens"]}}),
@@ -818,6 +900,42 @@ mod tests {
         );
         let code = r["result"]["content"][0]["text"].as_str().unwrap();
         assert!(code.contains("export default function"), "{r}");
+    }
+
+    #[test]
+    fn comments_tools() {
+        let mut s = Session {
+            doc: blank("t", Some((200.0, 100.0))),
+            history: History::default(),
+            path: None,
+            caches: RenderCaches::default(),
+        };
+        let r = call(
+            &mut s,
+            "tools/call",
+            json!({"name": "add_comment", "arguments": {"text": "Use the brand blue", "x": 10, "y": 20}}),
+        );
+        assert_eq!(r["result"]["isError"], false, "{r}");
+        call(
+            &mut s,
+            "tools/call",
+            json!({"name": "reply_comment", "arguments": {"index": 0, "text": "Done"}}),
+        );
+        call(
+            &mut s,
+            "tools/call",
+            json!({"name": "resolve_comment", "arguments": {"index": 0}}),
+        );
+        let r = call(
+            &mut s,
+            "tools/call",
+            json!({"name": "list_comments", "arguments": {}}),
+        );
+        let list: Value =
+            serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(list[0]["text"], "Use the brand blue");
+        assert_eq!(list[0]["resolved"], true);
+        assert_eq!(list[0]["replies"][0]["text"], "Done");
     }
 
     #[test]

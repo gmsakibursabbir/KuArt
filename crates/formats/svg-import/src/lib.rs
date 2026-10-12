@@ -51,10 +51,73 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
     let mut doc = im.doc;
     let _ = doc.take_changes();
     doc.shrink_to_fit();
+    doc.comments = notes(bytes);
     let mut warnings = im.warnings;
     warnings.sort();
     warnings.dedup();
     Ok(Imported { doc, warnings })
+}
+
+/// Notes left in the SVG source: `<title>`, `<desc>` and XML comments (generator banners are
+/// skipped). They become comments pinned at the top-left of the drawing.
+fn notes(bytes: &[u8]) -> Vec<ude_core::comments::Comment> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = Vec::new();
+    let mut push = |kind: &str, body: &str| {
+        let body = body.trim();
+        let banner = ["Generator:", "Created with", "Uploaded to"]
+            .iter()
+            .any(|b| body.starts_with(b));
+        if !body.is_empty() && !banner {
+            out.push(ude_core::comments::Comment {
+                text: unescape(body),
+                source: format!("SVG {kind}"),
+                ..Default::default()
+            });
+        }
+    };
+    let mut rest = text.as_ref();
+    while let Some(i) = rest.find("<!--") {
+        let Some(j) = rest[i + 4..].find("-->") else {
+            break;
+        };
+        push("comment", &rest[i + 4..i + 4 + j]);
+        rest = &rest[i + 4 + j + 3..];
+    }
+    for tag in ["title", "desc"] {
+        let (open, close) = (format!("<{tag}"), format!("</{tag}>"));
+        let mut rest = text.as_ref();
+        while let Some(i) = rest.find(&open) {
+            let after = &rest[i + open.len()..];
+            // `<title>` or `<title attr…>`, not `<titles>`.
+            if !after.starts_with(['>', ' ', '\n', '\t']) {
+                rest = after;
+                continue;
+            }
+            let Some(gt) = after.find('>') else { break };
+            let Some(end) = after[gt + 1..].find(&close) else {
+                break;
+            };
+            push(
+                if tag == "desc" {
+                    "description"
+                } else {
+                    "title"
+                },
+                &after[gt + 1..gt + 1 + end],
+            );
+            rest = &after[gt + 1 + end..];
+        }
+    }
+    out
+}
+
+fn unescape(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
 }
 
 struct Importer {
@@ -313,6 +376,28 @@ fn blend(b: usvg::BlendMode) -> BlendMode {
         B::Saturation => BlendMode::Saturation,
         B::Color => BlendMode::Color,
         B::Luminosity => BlendMode::Luminosity,
+    }
+}
+
+#[cfg(test)]
+mod notes_tests {
+    #[test]
+    fn reads_titles_descriptions_and_comments() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+<!-- Generator: Adobe Illustrator 27 -->
+<!-- TODO: swap the logo colour -->
+<title>Logo</title><desc>Primary mark &amp; wordmark</desc>
+<rect width="10" height="10"/></svg>"#;
+        let im = super::import(svg, "logo.svg").unwrap();
+        let texts: Vec<&str> = im.doc.comments.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "TODO: swap the logo colour",
+                "Logo",
+                "Primary mark & wordmark"
+            ]
+        );
     }
 }
 

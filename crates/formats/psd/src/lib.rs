@@ -80,6 +80,7 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
         .filter(|&e| e <= bytes.len())
         .ok_or("truncated layer section")?;
     let mut layers = Vec::new();
+    let mut notes = Vec::new();
     if lm_len > 0 {
         let li_len = r.len(psb)?;
         let li_start = r.pos;
@@ -87,8 +88,8 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
             layers = parse_layer_info(&bytes[li_start..(li_start + li_len).min(lm_end)], fmt)?;
         }
         r.pos = li_start + li_len;
-        if layers.is_empty() && r.pos + 4 <= lm_end {
-            // 16/32-bit files keep their layers in a tagged block after the global mask info.
+        if r.pos + 4 <= lm_end {
+            // Global tagged blocks: 16/32-bit layers (`Lr16`…) and notes (`Anno`).
             let gm = r.u32()? as usize;
             r.skip(gm)?;
             while r.pos + 12 <= lm_end {
@@ -103,9 +104,10 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
                     r.u32()? as usize
                 };
                 let data = r.take(len.min(lm_end - r.pos))?;
-                if matches!(&key, b"Lr16" | b"Lr32" | b"Layr") {
+                if layers.is_empty() && matches!(&key, b"Lr16" | b"Lr32" | b"Layr") {
                     layers = parse_layer_info(data, fmt)?;
-                    break;
+                } else if &key == b"Anno" {
+                    notes = annotations(data);
                 }
                 r.pos += (4 - len % 4) % 4;
             }
@@ -147,6 +149,7 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
         let tree = build_tree(layers)?;
         b.children(canvas, &tree, (0, 0))?;
     }
+    b.doc.comments = notes;
     let warnings = b.warnings.finish();
     let mut doc = b.doc;
     let _ = doc.take_changes();
@@ -486,6 +489,72 @@ fn blend_mode(key: &[u8]) -> BlendMode {
         b"lum " => BlendMode::Luminosity,
         _ => BlendMode::Normal,
     }
+}
+
+/// Photoshop notes (`Anno` block, Photoshop 6+): text annotations with author and position.
+/// Sound annotations are skipped.
+fn annotations(data: &[u8]) -> Vec<ude_core::comments::Comment> {
+    fn pascal(r: &mut Reader) -> Option<String> {
+        let n = usize::from(r.u8().ok()?);
+        let s = String::from_utf8_lossy(r.take(n).ok()?).into_owned();
+        // Padded to an even length including the length byte.
+        if n % 2 == 0 {
+            r.skip(1).ok()?;
+        }
+        Some(s)
+    }
+    let mut out = Vec::new();
+    let mut r = Reader::new(data);
+    let Ok(_) = r.skip(4) else { return out }; // major and minor version
+    let Ok(count) = r.u32() else { return out };
+    for _ in 0..count.min(10_000) {
+        let start = r.pos;
+        let Ok(len) = r.u32() else { break };
+        let end = start + len as usize;
+        if len < 8 || end > data.len() {
+            break;
+        }
+        let parsed = (|| -> Option<ude_core::comments::Comment> {
+            let kind = r.take(4).ok()?;
+            r.skip(4).ok()?; // open, flags, optional blocks
+            let icon = IRect::read(&mut r).ok()?;
+            r.skip(16 + 10).ok()?; // popup rect, colour
+            let author = pascal(&mut r)?;
+            let _name = pascal(&mut r)?;
+            let _date = pascal(&mut r)?;
+            if kind != b"txtA" {
+                return None;
+            }
+            r.skip(4).ok()?; // data length
+            if r.take(4).ok()? != b"txtC" {
+                return None;
+            }
+            let body = data.get(r.pos..end)?;
+            let text = if let Some(utf16) = body.strip_prefix(&[0xFE, 0xFF]) {
+                let units: Vec<u16> = utf16
+                    .chunks_exact(2)
+                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                    .collect();
+                String::from_utf16_lossy(&units)
+            } else {
+                String::from_utf8_lossy(body).into_owned()
+            };
+            let text = text
+                .trim_end_matches(['\0', '\r', '\n'])
+                .replace('\r', "\n");
+            Some(ude_core::comments::Comment {
+                x: icon.left as f32,
+                y: icon.top as f32,
+                author,
+                text,
+                source: "Photoshop note".into(),
+                ..Default::default()
+            })
+        })();
+        out.extend(parsed.filter(|c| !c.text.trim().is_empty()));
+        r.pos = end;
+    }
+    out
 }
 
 enum Item<'a> {

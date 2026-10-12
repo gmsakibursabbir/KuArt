@@ -59,6 +59,7 @@ pub fn build_overlay(
         guides: Vec::new(),
         scale,
         accent: None,
+        pins: Vec::new(),
     }
 }
 

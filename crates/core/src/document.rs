@@ -147,6 +147,8 @@ pub struct Document {
     pub strings: Interner,
     pub assets: AssetStore,
     pub meta: Metadata,
+    /// Comments on the pages (not part of undo history, like other design tools).
+    pub comments: Vec<crate::comments::Comment>,
     changes: ChangeSet,
     revision: u64,
 }
@@ -169,6 +171,7 @@ impl Document {
             strings,
             assets: AssetStore::default(),
             meta: Metadata::default(),
+            comments: Vec::new(),
             changes: ChangeSet::default(),
             revision: 0,
         }
@@ -180,6 +183,11 @@ impl Document {
 
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Marks a change made outside the op system (e.g. comments) so it counts as unsaved.
+    pub fn mark_changed(&mut self) {
+        self.revision += 1;
     }
 
     pub fn node(&self, id: NodeId) -> Option<&Node> {

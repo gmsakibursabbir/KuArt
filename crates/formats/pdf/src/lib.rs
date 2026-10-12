@@ -86,6 +86,8 @@ pub fn import(bytes: &[u8], name: &str, illustrator: bool) -> Result<Imported, S
         let resources = b.resources(page_dict);
         let mut st = State::new(flip);
         b.run(&content, &resources, frame, &mut st, 0)?;
+        let comments = annotations(&pdf, page_dict, i as u32, flip);
+        b.doc.comments.extend(comments);
     }
     if b.doc.children(root).is_empty() {
         return Err("the PDF has no pages".into());
@@ -826,6 +828,141 @@ fn translate_path(p: &ude_core::PathData, dx: f32, dy: f32) -> ude_core::PathDat
         }
     }
     b.build()
+}
+
+/// Markup annotations (notes, highlights, shapes…) as comments; replies (`IRT`) are threaded.
+fn annotations(
+    pdf: &lopdf::Document,
+    page: &Dictionary,
+    page_index: u32,
+    flip: Affine,
+) -> Vec<ude_core::comments::Comment> {
+    use ude_core::comments::{Comment, Reply};
+    let deref =
+        |o: &'_ Object| -> Option<Object> { pdf.dereference(o).ok().map(|(_, o)| o.clone()) };
+    let Some(Object::Array(annots)) = page.get(b"Annots").ok().and_then(deref) else {
+        return Vec::new();
+    };
+    let mut out: Vec<Comment> = Vec::new();
+    let mut by_id: HashMap<ObjectId, usize> = HashMap::new();
+    let mut replies: Vec<(ObjectId, Reply)> = Vec::new();
+    for a in &annots {
+        let id = a.as_reference().ok();
+        let Some(Object::Dictionary(d)) = deref(a) else {
+            continue;
+        };
+        let subtype = d.get(b"Subtype").and_then(Object::as_name).unwrap_or(b"");
+        if matches!(subtype, b"Popup" | b"Link" | b"Widget") {
+            continue;
+        }
+        let text = d
+            .get(b"Contents")
+            .ok()
+            .and_then(|o| o.as_str().ok())
+            .map(pdf_text)
+            .unwrap_or_default();
+        if text.trim().is_empty() {
+            continue;
+        }
+        let author = d
+            .get(b"T")
+            .ok()
+            .and_then(|o| o.as_str().ok())
+            .map(pdf_text)
+            .unwrap_or_default();
+        let created = d
+            .get(b"M")
+            .or_else(|_| d.get(b"CreationDate"))
+            .ok()
+            .and_then(|o| o.as_str().ok())
+            .and_then(pdf_date)
+            .unwrap_or(0);
+        if let Ok(parent) = d.get(b"IRT").and_then(Object::as_reference) {
+            replies.push((
+                parent,
+                Reply {
+                    author,
+                    text,
+                    created,
+                },
+            ));
+            continue;
+        }
+        let rect: Vec<f32> = d
+            .get(b"Rect")
+            .ok()
+            .and_then(deref)
+            .and_then(|r| {
+                r.as_array()
+                    .ok()
+                    .map(|a| a.iter().filter_map(|v| v.as_float().ok()).collect())
+            })
+            .unwrap_or_default();
+        // Pin at the annotation's top-left corner, in page (y-down) coordinates.
+        let pin = if let [x1, y1, x2, y2] = rect[..] {
+            flip.apply(Point::new(x1.min(x2), y1.max(y2)))
+        } else {
+            Point::new(0.0, 0.0)
+        };
+        let kind = String::from_utf8_lossy(subtype).into_owned();
+        if let Some(id) = id {
+            by_id.insert(id, out.len());
+        }
+        out.push(Comment {
+            page: page_index,
+            x: pin.x,
+            y: pin.y,
+            author,
+            text,
+            created,
+            resolved: false,
+            replies: Vec::new(),
+            source: format!("PDF {kind} annotation"),
+        });
+    }
+    for (parent, reply) in replies {
+        if let Some(&i) = by_id.get(&parent) {
+            out[i].replies.push(reply);
+        }
+    }
+    out
+}
+
+/// PDF text string: UTF-16BE with a byte-order mark, else PDFDocEncoding (≈ Latin-1).
+fn pdf_text(b: &[u8]) -> String {
+    if let Some(rest) = b.strip_prefix(&[0xFE, 0xFF]) {
+        let units: Vec<u16> = rest
+            .chunks_exact(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        b.iter()
+            .map(|&c| char::from(c))
+            .collect::<String>()
+            .replace('\r', "\n")
+    }
+}
+
+/// `D:YYYYMMDDHHmmSS` (time zone ignored) → unix seconds.
+fn pdf_date(b: &[u8]) -> Option<u64> {
+    let s = std::str::from_utf8(b).ok()?.trim_start_matches("D:");
+    let n = |r: std::ops::Range<usize>| s.get(r).and_then(|v| v.parse::<i64>().ok());
+    let (y, mo, d) = (n(0..4)?, n(4..6).unwrap_or(1), n(6..8).unwrap_or(1));
+    let (h, mi, se) = (
+        n(8..10).unwrap_or(0),
+        n(10..12).unwrap_or(0),
+        n(12..14).unwrap_or(0),
+    );
+    // Days from the civil date (Howard Hinnant's algorithm).
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(days * 86_400 + h * 3600 + mi * 60 + se).ok()
 }
 
 #[cfg(test)]

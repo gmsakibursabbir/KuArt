@@ -32,6 +32,8 @@ pub struct Overlay {
     pub scale: f64,
     /// Theme accent for selection, hover and guides (`None`: [`ACCENT`]).
     pub accent: Option<Color>,
+    /// Comment pins (device space): position and whether the comment is resolved.
+    pub pins: Vec<(Point, bool)>,
 }
 
 impl Overlay {
@@ -41,6 +43,7 @@ impl Overlay {
             && self.selection_box.is_none()
             && self.marquee.is_none()
             && self.guides.is_empty()
+            && self.pins.is_empty()
     }
 }
 
@@ -48,6 +51,30 @@ pub fn paint_overlay(o: &Overlay, p: &mut impl Painter) {
     let scale = if o.scale > 0.0 { o.scale } else { 1.0 };
     let line = scale;
     let accent = o.accent.unwrap_or(ACCENT);
+    for &(at, resolved) in &o.pins {
+        // Speech-bubble pin: circle above the point with a white rim.
+        let r = 9.0 * scale;
+        let c = Point::new(at.x + r, at.y - r);
+        let fill = if resolved {
+            Color::from_rgba8(0x8E, 0x8E, 0x8E, 0xFF)
+        } else {
+            accent
+        };
+        let e = vello::kurbo::Ellipse::new(c, (r, r), 0.0);
+        p.fill(
+            Affine::IDENTITY,
+            &Geom::Ellipse(e),
+            Fill::NonZero,
+            &BrushSpec::Solid(fill),
+            None,
+        );
+        p.stroke(
+            Affine::IDENTITY,
+            &Geom::Ellipse(e),
+            2.0 * scale,
+            &BrushSpec::Solid(Color::from_rgba8(0x0A, 0x0A, 0x0A, 0xFF)),
+        );
+    }
     if let Some(m) = o.marquee {
         let fill = BrushSpec::Solid(accent.multiply_alpha(0.10));
         p.fill(Affine::IDENTITY, &Geom::Rect(m), Fill::NonZero, &fill, None);
