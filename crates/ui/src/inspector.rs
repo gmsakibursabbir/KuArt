@@ -13,6 +13,8 @@ use crate::widgets::{field_label, icon, icon_button_sized, primary_button, secti
 use crate::{Action, ExportFormat, ExportOptions, icons};
 
 /// Inspector merge keys live in their own range so they never merge with canvas gestures.
+mod gradient;
+
 const KEY_SPACE: u64 = 1 << 63;
 
 const WEIGHTS: [(u16, &str); 9] = [
@@ -50,6 +52,8 @@ const BLENDS: [(BlendMode, &str); 17] = [
 #[derive(Default)]
 pub struct Inspector {
     session: u64,
+    /// Selected gradient stop in the Fill section.
+    stop: usize,
     pub export: ExportOptions,
 }
 
@@ -321,71 +325,109 @@ impl Inspector {
                 }
                 let mut remove = None;
                 for (i, p) in paints.iter_mut().enumerate() {
-                    ui.horizontal(|ui| match &mut p.kind {
-                        PaintKind::Solid(c) => {
-                            let mut c32 = to_egui(*c);
-                            let r = ui.color_edit_button_srgba(&mut c32);
-                            if r.changed() {
-                                *c = from_egui(c32);
-                                changed = Some(changed.unwrap_or_else(|| self.once_key(&r)));
-                            }
-                            let mut hex = c.to_hex().trim_start_matches('#').to_owned();
-                            let hr = ui.add(
-                                TextEdit::singleline(&mut hex)
-                                    .desired_width(72.0)
-                                    .font(egui::TextStyle::Monospace),
-                            );
-                            if hr.lost_focus()
-                                && let Some(nc) = parse_hex(&hex)
-                                && nc != *c
-                            {
-                                *c = nc;
-                                changed = Some(self.once());
-                            }
-                            let mut pct = f64::from(p.opacity) * 100.0;
-                            let pr = ui.add(
-                                DragValue::new(&mut pct)
-                                    .range(0.0..=100.0)
-                                    .suffix("%")
-                                    .max_decimals(0),
-                            );
-                            if let Some(k) = self.edited(&pr) {
-                                p.opacity = (pct / 100.0) as f32;
-                                changed = Some(k);
-                            }
-                            if icon_button_sized(
-                                ui,
-                                t,
-                                if p.visible {
-                                    icons::EYE
-                                } else {
-                                    icons::EYE_OFF
-                                },
-                                "Show/hide fill",
-                                false,
-                                22.0,
-                                12.0,
-                            )
-                            .clicked()
-                            {
-                                p.visible = !p.visible;
-                                changed = Some(self.once());
-                            }
-                            if icon_button_sized(ui, t, icons::X, "Remove fill", false, 22.0, 12.0)
+                    ui.horizontal(|ui| {
+                        if !matches!(p.kind, PaintKind::Image { .. })
+                            && let Some(k) = self.type_menu(ui, t, p, i)
+                        {
+                            changed = Some(k);
+                        }
+                        match &mut p.kind {
+                            PaintKind::Solid(c) => {
+                                let mut c32 = to_egui(*c);
+                                let r = ui.color_edit_button_srgba(&mut c32);
+                                if r.changed() {
+                                    *c = from_egui(c32);
+                                    changed = Some(changed.unwrap_or_else(|| self.once_key(&r)));
+                                }
+                                let mut hex = c.to_hex().trim_start_matches('#').to_owned();
+                                let hr = ui.add(
+                                    TextEdit::singleline(&mut hex)
+                                        .desired_width(72.0)
+                                        .font(egui::TextStyle::Monospace),
+                                );
+                                if hr.lost_focus()
+                                    && let Some(nc) = parse_hex(&hex)
+                                    && nc != *c
+                                {
+                                    *c = nc;
+                                    changed = Some(self.once());
+                                }
+                                let mut pct = f64::from(p.opacity) * 100.0;
+                                let pr = ui.add(
+                                    DragValue::new(&mut pct)
+                                        .range(0.0..=100.0)
+                                        .suffix("%")
+                                        .max_decimals(0),
+                                );
+                                if let Some(k) = self.edited(&pr) {
+                                    p.opacity = (pct / 100.0) as f32;
+                                    changed = Some(k);
+                                }
+                                if icon_button_sized(
+                                    ui,
+                                    t,
+                                    if p.visible {
+                                        icons::EYE
+                                    } else {
+                                        icons::EYE_OFF
+                                    },
+                                    "Show/hide fill",
+                                    false,
+                                    22.0,
+                                    12.0,
+                                )
                                 .clicked()
-                            {
-                                remove = Some(i);
+                                {
+                                    p.visible = !p.visible;
+                                    changed = Some(self.once());
+                                }
+                                if icon_button_sized(
+                                    ui,
+                                    t,
+                                    icons::X,
+                                    "Remove fill",
+                                    false,
+                                    22.0,
+                                    12.0,
+                                )
+                                .clicked()
+                                {
+                                    remove = Some(i);
+                                }
                             }
-                        }
-                        PaintKind::Gradient(_) => {
-                            ui.label(icon(icons::PALETTE, 13.0, t.text_secondary));
-                            ui.label(RichText::new("Gradient").color(t.text_secondary));
-                        }
-                        PaintKind::Image { .. } => {
-                            ui.label(icon(icons::IMAGE, 13.0, t.text_secondary));
-                            ui.label(RichText::new("Image").color(t.text_secondary));
+                            PaintKind::Gradient(g) => {
+                                let name = format!("{:?} gradient", g.kind);
+                                ui.label(RichText::new(name).color(t.text_secondary));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if icon_button_sized(
+                                            ui,
+                                            t,
+                                            icons::X,
+                                            "Remove fill",
+                                            false,
+                                            22.0,
+                                            12.0,
+                                        )
+                                        .clicked()
+                                        {
+                                            remove = Some(i);
+                                        }
+                                    },
+                                );
+                            }
+                            PaintKind::Image { .. } => {
+                                ui.label(icon(icons::IMAGE, 13.0, t.text_secondary));
+                                ui.label(RichText::new("Image").color(t.text_secondary));
+                            }
                         }
                     });
+                    if let PaintKind::Gradient(g) = &mut p.kind
+                        && let Some(k) = self.gradient_ui(ui, t, std::sync::Arc::make_mut(g), i)
+                    {
+                        changed = Some(k);
+                    }
                 }
                 if let Some(i) = remove {
                     paints.remove(i);

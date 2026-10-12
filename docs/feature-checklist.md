@@ -56,7 +56,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ~ Multiple fills and strokes per layer (multiple fills editable; one stroke)
 - ~ Gradient fills and strokes (drawn and exported; no editor)
 - ~ Linear, radial, angular and diamond gradients (all four drawn; diamond approximated)
-- ✗ Gradient stop editing
+- ✓ Gradient stop editing (type, stops bar, colour, position, angle)
 - ✓ Opacity and blend modes
 - ~ Masks and clipping masks (frame clipping ✓; masks kept, not composited)
 - ✓ Masks (vector outline; Ctrl+Alt+M) · ✗ alpha/luminance masks
@@ -363,7 +363,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 | Area | Status |
 |---|---|
 | A. Canvas and documents | core, align/distribute, tabs and autosave done; missing search, version history |
-| B. Vector drawing | shapes, pen, point editing and booleans done; missing gradient editor, path join/split |
+| B. Vector drawing | shapes, pen, point editing and booleans done; missing on-canvas gradient handles, path join/split |
 | C. Raster | placement and export done; no image editing |
 | D. Typography | rendering and on-canvas editing done; missing text styles, lists |
 | E. Layout | data imported and exported to code; no live auto-layout or constraints |
