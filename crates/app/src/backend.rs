@@ -86,6 +86,13 @@ impl Backend {
         }
     }
 
+    /// Drops cached frames (after opening another document).
+    pub fn invalidate(&mut self) {
+        if let Backend::Cpu(c) = self {
+            c.content_key = None;
+        }
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         let (w, h) = (width.max(1), height.max(1));
         match self {

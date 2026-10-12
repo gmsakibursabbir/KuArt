@@ -26,7 +26,8 @@ USAGE:
     design-editor-cli --version
 
 Supported now: .design. Importers arrive in later milestones:
-    .svg (M9), .psd (M10), .fig (M11), .xd (M12); PNG/SVG export (M8).";
+    .svg (M9), .psd (M10), .fig (M11), .xd (M12). Images (.png .jpg .webp) open; output
+    can be .design, .png or .svg (first page).";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -179,7 +180,24 @@ fn cmd_convert(input: &Path, output: &Path) -> CliResult {
     let doc = open(input)?;
     match extension(output).as_str() {
         "design" => save_to_path(&doc, output).map_err(|e| e.to_string())?,
-        "png" | "svg" => return Err("export is not implemented yet (milestone M8)".into()),
+        "png" | "svg" => {
+            // Exports the first page.
+            let page = *doc
+                .children(doc.root())
+                .first()
+                .ok_or("document has no pages")?;
+            let bytes = if extension(output) == "png" {
+                ude_renderer::export_png(
+                    &doc,
+                    page,
+                    1.0,
+                    &mut ude_renderer::RenderCaches::default(),
+                )?
+            } else {
+                ude_format_svg::export(&doc, page)?.into_bytes()
+            };
+            std::fs::write(output, bytes).map_err(|e| format!("{}: {e}", output.display()))?;
+        }
         "pdf" => return Err("PDF export is not implemented yet (phase 2)".into()),
         other => return Err(format!("unsupported output format '.{other}'")),
     }

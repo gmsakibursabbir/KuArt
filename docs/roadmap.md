@@ -16,8 +16,8 @@ green. Status is updated in this file as milestones land.
 | M5 | Panels | egui shell styled per [ui-design-system.md](ui-design-system.md) (Kuduy tokens, Inter + JetBrains Mono bundled): toolbar, virtualized layers panel, basic inspector, dark/light/system/high-contrast | 100k layers: panel frame < 2 ms; token contrast test passes AA | **done**: panels frame 0.098 ms with 60k rows; AA contrast test passes; CPU renderer only; app 34 MB private |
 | M6 | Shape & text tools | rect/ellipse/polygon/line/frame tools; text via parley; missing font warnings | text renders identically on GPU and CPU backends (golden) | **done**: text via parley on both backends; 100%-zoom CPU frame 15 ms first / 1.6 ms cached; GPU/CPU golden comparison not automated |
 | M7 | Images | asset store, lazy scaled decode, image cache + texture LRU | 6000×4000 shown at 300×200 holds ≤ 1 MB decoded | **done**: decode at needed mip level, 128 MB LRU cache, raster + image-fill rendering, PNG/JPG/WebP import; decode is synchronous (async later) |
-| M8 | Export | PNG (CPU backend) and SVG writer | golden-image tests | next |
-| M9 | SVG import | `usvg` mapping | W3C SVG subset corpus ≥ 90% at SSIM ≥ 0.98 | |
+| M8 | Export | PNG (CPU backend) and SVG writer | golden-image tests | **done**: PNG (CPU render, 2x from the app) + SVG writer; CLI convert; app Open/Save/Save As/Export with native dialogs and unsaved marker |
+| M9 | SVG import | `usvg` mapping | W3C SVG subset corpus ≥ 90% at SSIM ≥ 0.98 | next |
 | M10 | PSD import | layer tree, groups, raster (lazy RLE/ZIP), opacity/blend/visibility, clipping, raster masks, text (data + pixel fallback), preserved blocks | corpus renders match the merged image at SSIM ≥ 0.97 | |
 | M11 | Figma import | `.fig` container, kiwi schema decode, tree rebuild, shapes/vectors/text/fills/images | corpus vs reference PNGs | |
 | M12 | XD import | UCF zip, AGC → model, artboards, shapes, text, images | corpus vs reference PNGs | |

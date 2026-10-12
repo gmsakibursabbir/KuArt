@@ -18,6 +18,7 @@
 
 mod backend;
 mod camera;
+mod files;
 mod selection_ui;
 mod tools;
 
@@ -89,26 +90,7 @@ fn parse_args() -> Result<Options, String> {
 
 fn load_document(o: &Options) -> Result<(Document, String), String> {
     match &o.file {
-        Some(path) => {
-            let name = path
-                .file_name()
-                .map_or_else(|| "Untitled".into(), |n| n.to_string_lossy().into_owned());
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            let err = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
-            let doc = match ext.as_str() {
-                "png" | "jpg" | "jpeg" | "webp" => {
-                    let bytes = std::fs::read(path).map_err(|e| err(&e))?;
-                    ude_format_raster::import(bytes, &name).map_err(|e| err(&e))?
-                }
-                _ => ude_format_native::load_from_path(path, &ude_format_native::Limits::default())
-                    .map_err(|e| err(&e))?,
-            };
-            Ok((doc, name))
-        }
+        Some(path) => Ok((files::load_path(path)?, files::file_name(path))),
         None => {
             let doc = ude_bench::generate(ude_bench::SynthSpec {
                 nodes: o.demo_nodes,
@@ -156,6 +138,9 @@ struct App {
     canvas: Rect,
     panel_hover: Option<NodeId>,
     applied_theme: Option<(ThemeChoice, bool)>,
+    /// Document revision at the last save (or open); differs when there are unsaved changes.
+    saved_revision: u64,
+    shown_dirty: bool,
     caches: RenderCaches,
     tool: Tool,
 }
@@ -210,6 +195,8 @@ impl App {
             canvas: Rect::ZERO,
             panel_hover: None,
             applied_theme: None,
+            saved_revision: 0,
+            shown_dirty: false,
             caches: RenderCaches::default(),
             tool: Tool::Move,
             index,
@@ -364,6 +351,9 @@ impl App {
                     }
                 }
                 Action::Tool(tool) => self.tool = tool,
+                Action::Open => self.open_dialog(),
+                Action::Save => self.save(),
+                Action::Export => self.export_dialog(),
                 Action::SetText {
                     id,
                     content,
@@ -437,6 +427,11 @@ impl App {
             .map(|&(a, b)| (view.transform * a, view.transform * b))
             .collect();
         self.selection_box = overlay.selection_box.map(|o| o.quad);
+        let dirty = self.doc.revision() != self.saved_revision;
+        if dirty != self.shown_dirty && !self.options.stats {
+            self.shown_dirty = dirty;
+            self.update_title();
+        }
         let Some(backend) = self.backend.as_mut() else {
             return;
         };
@@ -534,6 +529,10 @@ impl App {
             return self.redraw();
         }
         match code {
+            KeyCode::KeyO if ctrl => self.open_dialog(),
+            KeyCode::KeyS if ctrl && shift => self.save_as(),
+            KeyCode::KeyS if ctrl => self.save(),
+            KeyCode::KeyE if ctrl && shift => self.export_dialog(),
             KeyCode::KeyZ if ctrl && shift => self.redo(),
             KeyCode::KeyZ if ctrl => self.undo(),
             KeyCode::KeyY if ctrl => self.redo(),
@@ -1064,6 +1063,7 @@ fn main() -> std::process::ExitCode {
         }
     };
     let mut app = App::new(options, doc, title);
+    app.saved_revision = app.doc.revision();
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("error: {e}");
         return std::process::ExitCode::FAILURE;

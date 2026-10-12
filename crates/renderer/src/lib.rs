@@ -78,6 +78,93 @@ pub fn paint_page(
     cx.stats
 }
 
+/// Document-space bounds of what `id` paints: its own box, or for pages and groups the
+/// union of their children (strokes and effects included).
+pub fn export_bounds(doc: &Document, id: NodeId) -> Option<Rect> {
+    let own = |n: NodeId| {
+        let node = doc.node(n)?;
+        let o = f64::from(node.paint_outset());
+        let local = Rect::new(
+            -o,
+            -o,
+            f64::from(node.size.w) + o,
+            f64::from(node.size.h) + o,
+        );
+        Some(convert::affine(&doc.world_transform(n)).transform_rect_bbox(local))
+    };
+    let has_box = doc
+        .node(id)
+        .is_some_and(|n| n.size.w > 0.0 || n.size.h > 0.0);
+    if has_box {
+        own(id)
+    } else {
+        doc.descendants(id)
+            .skip(1)
+            .filter_map(own)
+            .filter(|r| r.area() > 0.0)
+            .reduce(|a, b| a.union(b))
+    }
+}
+
+/// Renders `id` (a page or any layer) offscreen at `scale` on the CPU backend.
+/// Returns width, height and straight (non-premultiplied) RGBA8 pixels.
+pub fn render_to_rgba(
+    doc: &Document,
+    id: NodeId,
+    scale: f64,
+    caches: &mut RenderCaches,
+) -> Option<(u32, u32, Vec<u8>)> {
+    let bounds = export_bounds(doc, id)?;
+    let (w, h) = (
+        (bounds.width() * scale).ceil(),
+        (bounds.height() * scale).ceil(),
+    );
+    if !(1.0..=f64::from(u16::MAX)).contains(&w) || !(1.0..=f64::from(u16::MAX)).contains(&h) {
+        return None;
+    }
+    let (w, h) = (w as u16, h as u16);
+    let view = Affine::scale(scale) * Affine::translate((-bounds.x0, -bounds.y0));
+    let mut cx = vello_cpu::RenderContext::new(w, h);
+    let mut resources = vello_cpu::Resources::new();
+    caches.images.next_frame();
+    let mut painter = CpuPainter {
+        cx: &mut cx,
+        resources: &mut resources,
+    };
+    let mut tcx = Cx {
+        doc,
+        painter: &mut painter,
+        caches,
+        viewport: Rect::new(0.0, 0.0, f64::from(w), f64::from(h)),
+        stats: FrameStats::default(),
+    };
+    let is_page = doc
+        .node(id)
+        .is_some_and(|n| matches!(n.kind, NodeKind::Page | NodeKind::Document));
+    if is_page {
+        for &child in doc.children(id) {
+            tcx.node(child, view, 1.0);
+        }
+    } else {
+        // Start from the parent's world transform so the layer renders exactly as on canvas.
+        let parent = doc
+            .node(id)
+            .and_then(|n| n.parent)
+            .map_or(Affine::IDENTITY, |p| {
+                convert::affine(&doc.world_transform(p))
+            });
+        tcx.node(id, view * parent, 1.0);
+    }
+    cx.flush();
+    let mut pixmap = vello_cpu::Pixmap::new(w, h);
+    cx.render(&mut pixmap, &mut resources);
+    Some((
+        u32::from(w),
+        u32::from(h),
+        pixmap.take_rgba8(vello::peniko::ImageAlphaType::Alpha),
+    ))
+}
+
 struct Cx<'a, P: Painter> {
     doc: &'a Document,
     painter: &'a mut P,
@@ -488,6 +575,22 @@ fn regular_polygon(w: f64, h: f64, n: usize, inner: Option<f64>) -> BezPath {
     p
 }
 
+/// Encodes `id` as a PNG at `scale` (see [`render_to_rgba`]).
+pub fn export_png(
+    doc: &Document,
+    id: NodeId,
+    scale: f64,
+    caches: &mut RenderCaches,
+) -> Result<Vec<u8>, String> {
+    let (w, h, rgba) =
+        render_to_rgba(doc, id, scale, caches).ok_or("nothing to export (empty or too large)")?;
+    let img = image::RgbaImage::from_raw(w, h, rgba).ok_or("pixel buffer size mismatch")?;
+    let mut out = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -632,6 +735,22 @@ mod tests {
         let inked = px.chunks_exact(4).filter(|p| p[3] > 128).count();
         assert!(inked > 50, "glyph pixels drawn: {inked}");
         assert_eq!(stats.drawn, 1);
+    }
+
+    #[test]
+    fn export_renders_layer_at_scale() {
+        let fill = Paints::new(vec![Paint::solid(Color::from_rgba8(10, 20, 30, 128))]);
+        let (doc, page) = page_with(vec![Node::new(NodeKind::Rectangle, Symbol::EMPTY)
+            .with_transform(ude_core::Affine::translate(100.0, 50.0))
+            .with_size(20.0, 10.0)
+            .with_fills(fill)]);
+        let rect = doc.children(page)[0];
+        let (w, h, px) = render_to_rgba(&doc, rect, 2.0, &mut RenderCaches::default()).unwrap();
+        assert_eq!((w, h), (40, 20), "layer bounds at 2x, positioned at the origin");
+        let p = &px[(10 * 40 + 20) * 4..][..4];
+        assert!(p[3].abs_diff(128) <= 1 && p[0].abs_diff(10) <= 2, "straight (not premultiplied) RGBA: {p:?}");
+        let png = export_png(&doc, page, 1.0, &mut RenderCaches::default()).unwrap();
+        assert_eq!(&png[1..4], b"PNG");
     }
 
     #[test]

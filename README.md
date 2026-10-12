@@ -4,7 +4,9 @@ A native Rust design editor (no Electron, no browser engine) that opens, edits a
 Adobe XD, Photoshop, SVG and PDF designs in one GPU-accelerated canvas, with a built-in Dev Mode
 for CSS/HTML/Tailwind/React/Vue output. It is built to run well on older PCs with 8 GB of RAM.
 
-**Status: Milestone 7 done.** Images render (decoded at the size on screen, bounded cache) and PNG/JPG/WebP files open directly. App icon: `assets/icon.png`.
+**Status: Milestone 8 done.** Open (Ctrl+O), Save (Ctrl+S), Save As (Ctrl+Shift+S) and Export to PNG/SVG (Ctrl+Shift+E) in the app; `design-editor-cli convert` to .png/.svg.
+
+M7: Images render (decoded at the size on screen, bounded cache) and PNG/JPG/WebP files open directly. App icon: `assets/icon.png`.
 
 M6: Drawing tools (frame, rectangle, ellipse, polygon, star, line, text; V F R O P S L T) and real text rendering with missing-font warnings.
 

@@ -25,6 +25,8 @@ egui-winit = { version = "0.34", default-features = false, features = ["clipboar
 egui_software_backend = { version = "0.0.3", default-features = false, features = ["std", "rayon"] }
 bytemuck = "1"
 ude-format-raster = { version = "0.0.1", path = "../formats/raster" }
+rfd = "0.17"
+ude-format-svg = { version = "0.0.1", path = "../formats/svg" }
 
 [lints]
 workspace = true

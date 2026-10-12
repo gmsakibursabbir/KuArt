@@ -34,6 +34,9 @@ pub enum Action {
         merge_key: u64,
     },
     Tool(Tool),
+    Open,
+    Save,
+    Export,
     Undo,
     Redo,
     ZoomToFit,
@@ -80,6 +83,19 @@ impl Panels {
                     ui.label(RichText::new("◆ KuArt").strong().color(t.accent));
                     ui.separator();
                     ui.colored_label(t.text_secondary, status.title);
+                    for (label, hint, action) in [
+                        ("Open", "Open a design or image (Ctrl+O)", Action::Open),
+                        ("Save", "Save (Ctrl+S)", Action::Save),
+                        (
+                            "Export",
+                            "Export selection or page as PNG/SVG (Ctrl+Shift+E)",
+                            Action::Export,
+                        ),
+                    ] {
+                        if ui.button(label).on_hover_text(hint).clicked() {
+                            actions.push(action);
+                        }
+                    }
                     ui.separator();
                     for tool in Tool::ALL {
                         let hint = format!("{} ({})", tool.label(), tool.shortcut());
