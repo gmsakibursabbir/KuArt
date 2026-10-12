@@ -34,6 +34,8 @@ ude-format-xd = { path = "../formats/xd" }
 ude-format-sketch = { path = "../formats/sketch" }
 ude-format-pdf = { path = "../formats/pdf" }
 ude-diagnostics = { path = "../diagnostics" }
+blake3 = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
 ureq = "3"
 
 [lints]

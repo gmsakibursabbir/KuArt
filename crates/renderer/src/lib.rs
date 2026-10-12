@@ -627,13 +627,90 @@ pub fn export_raster(
     format: RasterFormat,
     caches: &mut RenderCaches,
 ) -> Result<Vec<u8>, String> {
+    export_raster_with(doc, id, scale, format, Compression::default(), caches)
+}
+
+/// Export compression (the Design tab's "Compress" and quality settings).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Compression {
+    /// PNG and WebP: reduce to an optimised palette of at most 256 colours (lossy, like
+    /// TinyPNG). JPEG is always lossy.
+    pub palette: bool,
+    /// 10–100: JPEG quality; for palettes, higher means slower, more accurate colour search.
+    pub quality: u8,
+}
+
+impl Default for Compression {
+    fn default() -> Self {
+        Self {
+            palette: false,
+            quality: 90,
+        }
+    }
+}
+
+/// Like [`export_raster`], with compression settings.
+pub fn export_raster_with(
+    doc: &Document,
+    id: NodeId,
+    scale: f64,
+    format: RasterFormat,
+    compression: Compression,
+    caches: &mut RenderCaches,
+) -> Result<Vec<u8>, String> {
     let (w, h, rgba) =
         render_to_rgba(doc, id, scale, caches).ok_or("nothing to export (empty or too large)")?;
+    encode_rgba(w, h, rgba, format, compression)
+}
+
+/// Encodes straight-alpha RGBA8 pixels.
+pub fn encode_rgba(
+    w: u32,
+    h: u32,
+    mut rgba: Vec<u8>,
+    format: RasterFormat,
+    c: Compression,
+) -> Result<Vec<u8>, String> {
+    let quality = c.quality.clamp(10, 100);
+    if c.palette && format == RasterFormat::Png {
+        // A palette wins on photos and noisy art; flat or smooth artwork is often smaller as
+        // full-colour PNG (its row filters predict gradients). Keep whichever is smaller.
+        let palette = palette_png(w, h, &rgba, quality)?;
+        let full = encode_rgba(
+            w,
+            h,
+            rgba,
+            format,
+            Compression {
+                palette: false,
+                quality,
+            },
+        )?;
+        return Ok(if palette.len() < full.len() {
+            palette
+        } else {
+            full
+        });
+    }
+    if c.palette && format == RasterFormat::WebP {
+        // Fewer distinct colours compress far better in lossless WebP.
+        quantize_in_place(&mut rgba, quality);
+    }
     let img = image::RgbaImage::from_raw(w, h, rgba).ok_or("pixel buffer size mismatch")?;
     let mut out = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut out);
     match format {
-        RasterFormat::Png => img.write_to(&mut cursor, image::ImageFormat::Png),
+        RasterFormat::Png => image::ImageEncoder::write_image(
+            image::codecs::png::PngEncoder::new_with_quality(
+                &mut cursor,
+                image::codecs::png::CompressionType::Best,
+                image::codecs::png::FilterType::Adaptive,
+            ),
+            &img,
+            w,
+            h,
+            image::ExtendedColorType::Rgba8,
+        ),
         RasterFormat::WebP => img.write_to(&mut cursor, image::ImageFormat::WebP),
         RasterFormat::Jpeg => {
             let rgb = image::RgbImage::from_fn(w, h, |x, y| {
@@ -643,10 +720,57 @@ pub fn export_raster(
                 };
                 image::Rgb([over(r), over(g), over(b)])
             });
-            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 90).encode_image(&rgb)
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, quality)
+                .encode_image(&rgb)
         }
     }
     .map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
+/// NeuQuant sampling factor: 1 (best) … 30 (fastest), from a 10–100 quality.
+fn sample_factor(quality: u8) -> i32 {
+    (31 - i32::from(quality) * 3 / 10).clamp(1, 30)
+}
+
+fn quantize_in_place(rgba: &mut [u8], quality: u8) {
+    let nq = color_quant::NeuQuant::new(sample_factor(quality), 256, rgba);
+    for px in rgba.chunks_exact_mut(4) {
+        let i = nq.index_of(px);
+        if let Some(c) = nq.lookup(i) {
+            px.copy_from_slice(&c);
+        }
+    }
+}
+
+/// Indexed PNG with an optimised palette (with alpha) and maximum compression.
+fn palette_png(w: u32, h: u32, rgba: &[u8], quality: u8) -> Result<Vec<u8>, String> {
+    let nq = color_quant::NeuQuant::new(sample_factor(quality), 256, rgba);
+    let map = nq.color_map_rgba();
+    let indices: Vec<u8> = rgba
+        .chunks_exact(4)
+        .map(|px| nq.index_of(px) as u8)
+        .collect();
+    let palette: Vec<u8> = map
+        .chunks_exact(4)
+        .flat_map(|c| [c[0], c[1], c[2]])
+        .collect();
+    let trns: Vec<u8> = map.chunks_exact(4).map(|c| c[3]).collect();
+    let mut out = Vec::new();
+    {
+        let mut e = png::Encoder::new(&mut out, w, h);
+        e.set_color(png::ColorType::Indexed);
+        e.set_depth(png::BitDepth::Eight);
+        e.set_palette(palette);
+        if trns.iter().any(|&a| a < 255) {
+            e.set_trns(trns);
+        }
+        e.set_compression(png::Compression::High);
+        let mut writer = e.write_header().map_err(|e| e.to_string())?;
+        writer
+            .write_image_data(&indices)
+            .map_err(|e| e.to_string())?;
+    }
     Ok(out)
 }
 
@@ -956,5 +1080,97 @@ mod tests {
             nodes.push(n);
         }
         page_with(nodes).0
+    }
+
+    #[test]
+    fn compressed_exports_decode_and_shrink() {
+        // Noisy pixels (like a photo): the palette pass is what makes it smaller.
+        let (w, h) = (256u32, 128u32);
+        let mut seed = 7u32;
+        let rgba: Vec<u8> = (0..w * h)
+            .flat_map(|_| {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let [a, b, c, _] = seed.to_le_bytes();
+                [a, b, c, 255]
+            })
+            .collect();
+        let plain = encode_rgba(
+            w,
+            h,
+            rgba.clone(),
+            RasterFormat::Png,
+            Compression::default(),
+        )
+        .unwrap();
+        let small = encode_rgba(
+            w,
+            h,
+            rgba.clone(),
+            RasterFormat::Png,
+            Compression {
+                palette: true,
+                quality: 80,
+            },
+        )
+        .unwrap();
+        assert!(
+            small.len() < plain.len(),
+            "{} vs {}",
+            small.len(),
+            plain.len()
+        );
+        let back = image::load_from_memory(&small).unwrap();
+        assert_eq!((back.width(), back.height()), (w, h));
+        // Smooth artwork: compression never makes the file larger.
+        let smooth: Vec<u8> = (0..w * h)
+            .flat_map(|i| [(i % w) as u8, (i / w) as u8, 0, 255])
+            .collect();
+        let a = encode_rgba(
+            w,
+            h,
+            smooth.clone(),
+            RasterFormat::Png,
+            Compression::default(),
+        )
+        .unwrap();
+        let b = encode_rgba(
+            w,
+            h,
+            smooth,
+            RasterFormat::Png,
+            Compression {
+                palette: true,
+                quality: 80,
+            },
+        )
+        .unwrap();
+        assert!(b.len() <= a.len());
+        let jpg = encode_rgba(
+            w,
+            h,
+            rgba.clone(),
+            RasterFormat::Jpeg,
+            Compression {
+                palette: false,
+                quality: 40,
+            },
+        )
+        .unwrap();
+        assert_eq!(image::guess_format(&jpg).unwrap(), image::ImageFormat::Jpeg);
+        let webp = encode_rgba(
+            w,
+            h,
+            rgba,
+            RasterFormat::WebP,
+            Compression {
+                palette: true,
+                quality: 60,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            image::guess_format(&webp).unwrap(),
+            image::ImageFormat::WebP
+        );
     }
 }

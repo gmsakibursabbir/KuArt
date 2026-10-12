@@ -22,6 +22,7 @@ mod backend;
 mod camera;
 mod files;
 mod google_fonts;
+mod recents;
 mod selection_ui;
 mod tools;
 
@@ -59,7 +60,8 @@ struct Options {
     /// GPU renderer is opt-in until its memory overhead is resolved (docs/perf-log.md).
     use_gpu: bool,
     stats: bool,
-    demo_nodes: u32,
+    /// `--demo N`: open a synthetic N-layer document instead of the home screen.
+    demo: Option<u32>,
 }
 
 fn parse_args() -> Result<Options, String> {
@@ -67,7 +69,7 @@ fn parse_args() -> Result<Options, String> {
         file: None,
         use_gpu: std::env::var("UDE_RENDERER").is_ok_and(|v| v.eq_ignore_ascii_case("gpu")),
         stats: false,
-        demo_nodes: 10_000,
+        demo: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -76,9 +78,10 @@ fn parse_args() -> Result<Options, String> {
             "--cpu" => o.use_gpu = false,
             "--stats" => o.stats = true,
             "--demo" => {
-                o.demo_nodes = args
+                o.demo = args
                     .next()
                     .and_then(|v| v.replace('_', "").parse().ok())
+                    .map(Some)
                     .ok_or("--demo needs a number")?
             }
             "-h" | "--help" => return Err(USAGE.into()),
@@ -94,13 +97,13 @@ fn parse_args() -> Result<Options, String> {
 fn load_document(o: &Options) -> Result<(Document, String), String> {
     match &o.file {
         Some(path) => Ok((files::load_path(path)?, files::file_name(path))),
-        None => {
-            let doc = ude_bench::generate(ude_bench::SynthSpec {
-                nodes: o.demo_nodes,
-                seed: 42,
-            });
-            Ok((doc, format!("Demo ({} nodes)", o.demo_nodes)))
-        }
+        None => match o.demo {
+            Some(nodes) => {
+                let doc = ude_bench::generate(ude_bench::SynthSpec { nodes, seed: 42 });
+                Ok((doc, format!("Demo ({nodes} nodes)")))
+            }
+            None => Ok((files::blank_document(), "KuArt".into())),
+        },
     }
 }
 
@@ -156,6 +159,10 @@ struct App {
     shown_dirty: bool,
     caches: RenderCaches,
     tool: Tool,
+    /// Home screen (recent files) instead of the editor.
+    home: bool,
+    recents: Vec<ude_ui::Recent>,
+    recents_dirty: bool,
 }
 
 enum Drag {
@@ -202,7 +209,11 @@ impl App {
             merge_seq: 0,
             nudge_key: None,
             cursor_icon: CursorIcon::Default,
-            egui: egui::Context::default(),
+            egui: {
+                let c = egui::Context::default();
+                theme::install_fonts(&c);
+                c
+            },
             egui_state: None,
             panels: Panels::default(),
             canvas: Rect::ZERO,
@@ -217,6 +228,9 @@ impl App {
             shown_dirty: false,
             caches: RenderCaches::default(),
             tool: Tool::Move,
+            home: false,
+            recents: Vec::new(),
+            recents_dirty: true,
             index,
             selection: Selection::default(),
             hover: None,
@@ -298,6 +312,13 @@ impl App {
         page: NodeId,
     ) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
         let diagnostics = self.diagnostics.then(|| self.diagnostic_rows());
+        if self.home && self.recents_dirty {
+            self.recents = recents::load();
+            self.recents_dirty = false;
+        }
+        if self.home {
+            recents::load_textures(&self.egui, &mut self.recents);
+        }
         let state = self.egui_state.as_mut()?;
         let input = state.take_egui_input(window);
         let system_dark = window.theme() != Some(winit::window::Theme::Light);
@@ -312,6 +333,7 @@ impl App {
         let families = self.caches.text.missing_families();
         let status = Status {
             title: &self.title,
+            dirty: self.doc.revision() != self.saved_revision,
             zoom: self.camera.zoom,
             renderer: &renderer,
             can_undo: self.history.can_undo(),
@@ -321,6 +343,8 @@ impl App {
             missing_families: &families,
             font_status: self.font_status.as_deref(),
             diagnostics: diagnostics.as_deref(),
+            recents: &self.recents,
+            home: self.home,
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -368,6 +392,11 @@ impl App {
                     value,
                     merge_key,
                 } => {
+                    let merge_key = if merge_key == 0 {
+                        self.next_merge_key()
+                    } else {
+                        merge_key
+                    };
                     let mut tx = Transaction::new("Edit").with_merge_key(merge_key);
                     match tx.apply(&mut self.doc, Op::Set { id, value }) {
                         Ok(()) => self.history.commit(&mut self.doc, tx),
@@ -392,6 +421,28 @@ impl App {
                 Action::Undo => self.undo(),
                 Action::Redo => self.redo(),
                 Action::ZoomToFit => self.zoom_to_fit(),
+                Action::ZoomIn => self.zoom_center(2.0),
+                Action::ZoomOut => self.zoom_center(0.5),
+                Action::Zoom100 => self.zoom_100(),
+                Action::ToggleDiagnostics => self.diagnostics = !self.diagnostics,
+                Action::Rename(id, name) => self.rename(id, &name),
+                Action::New => self.new_document(),
+                Action::Import => self.import_dialog(),
+                Action::OpenRecent(path) => {
+                    if self.confirm_discard() {
+                        self.open_path(path);
+                    }
+                }
+                Action::RemoveRecent(path) => {
+                    recents::remove(&path);
+                    self.recents_dirty = true;
+                }
+                Action::Home => self.go_home(),
+                Action::SaveAs => self.save_as(),
+                Action::ExportWith(o) => self.export_with(o),
+                Action::SelectPage(p) => self.select_page(p),
+                Action::AddPage => self.add_page(),
+                Action::Edit(e) => self.edit(e),
             }
             self.redraw();
         }
@@ -452,6 +503,8 @@ impl App {
             .map(|&(a, b)| (view.transform * a, view.transform * b))
             .collect();
         self.selection_box = overlay.selection_box.map(|o| o.quad);
+        let [ar, ag, ab, _] = self.panels.theme.tokens(system_dark).accent.to_array();
+        overlay.accent = Some(Color::from_rgba8(ar, ag, ab, 255));
         let dirty = self.doc.revision() != self.saved_revision;
         if dirty != self.shown_dirty && !self.options.stats {
             self.shown_dirty = dirty;
@@ -556,6 +609,7 @@ impl App {
         }
         match code {
             KeyCode::KeyO if ctrl => self.open_dialog(),
+            KeyCode::KeyN if ctrl => self.new_document(),
             KeyCode::KeyC if ctrl => self.copy(),
             KeyCode::KeyX if ctrl => {
                 self.copy();
@@ -585,12 +639,7 @@ impl App {
                 self.delete_selection();
             }
             KeyCode::Digit1 if shift => self.zoom_to_fit(),
-            KeyCode::Digit0 if shift || ctrl => {
-                let (w, h) = self.viewport();
-                self.camera
-                    .set_zoom_at(Point::new(w / 2.0, h / 2.0), 1.0, self.scale_factor());
-                self.redraw();
-            }
+            KeyCode::Digit0 if shift || ctrl => self.zoom_100(),
             KeyCode::Equal | KeyCode::NumpadAdd if ctrl => self.zoom_center(2.0),
             KeyCode::Minus | KeyCode::NumpadSubtract if ctrl => self.zoom_center(0.5),
             KeyCode::Escape => {
@@ -1114,7 +1163,9 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    let home = options.file.is_none() && options.demo.is_none();
     let mut app = App::new(options, doc, title);
+    app.home = home;
     app.proxy = Some(event_loop.create_proxy());
     app.saved_revision = app.doc.revision();
     if let Err(e) = event_loop.run_app(&mut app) {
@@ -1299,5 +1350,38 @@ impl App {
             eprintln!("arrange failed: {e}");
         }
         self.redraw();
+    }
+}
+
+impl App {
+    fn zoom_100(&mut self) {
+        let (w, h) = self.viewport();
+        self.camera
+            .set_zoom_at(Point::new(w / 2.0, h / 2.0), 1.0, self.scale_factor());
+        self.redraw();
+    }
+
+    fn edit(&mut self, e: ude_ui::Edit) {
+        use ude_ui::Edit as E;
+        match e {
+            E::Copy => self.copy(),
+            E::Cut => {
+                self.copy();
+                self.delete_selection();
+            }
+            E::Paste => self.paste(),
+            E::Duplicate => self.structural("duplicate"),
+            E::Delete => self.delete_selection(),
+            E::Group => self.structural("group"),
+            E::Ungroup => self.structural("ungroup"),
+            E::BringForward => self.arrange(Arrange::Forward),
+            E::SendBackward => self.arrange(Arrange::Backward),
+            E::SelectAll => {
+                if let Some(page) = self.page {
+                    let all = self.doc.children(page).to_vec();
+                    self.selection.set(all);
+                }
+            }
+        }
     }
 }

@@ -17,6 +17,9 @@ vello_cpu = { version = "0.3", features = ["multithreading"] }
 # PDF export: glyph outlines and stream compression.
 skrifa = "0.44"
 flate2 = "1"
+# Export compression: palette quantization and indexed PNG.
+color_quant = "1"
+png = "0.18"
 
 [lints]
 workspace = true

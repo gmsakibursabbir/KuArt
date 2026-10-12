@@ -3389,6 +3389,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 name = "ude-app"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "bytemuck",
  "egui-winit",
  "egui_software_backend",
@@ -3578,9 +3579,11 @@ dependencies = [
 name = "ude-renderer"
 version = "0.1.0"
 dependencies = [
+ "color_quant",
  "flate2",
  "image",
  "parley",
+ "png",
  "skrifa 0.44.0",
  "ude-core",
  "ude-format-psd",
@@ -3602,6 +3605,7 @@ name = "ude-ui"
 version = "0.1.0"
 dependencies = [
  "egui",
+ "ude-codegen",
  "ude-core",
  "ude-editor",
 ]

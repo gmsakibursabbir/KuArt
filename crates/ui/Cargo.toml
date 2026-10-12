@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 egui = { version = "0.34", default-features = false, features = ["default_fonts"] }
+ude-codegen = { path = "../codegen" }
 ude-core = { path = "../core" }
 ude-editor = { path = "../editor" }
 

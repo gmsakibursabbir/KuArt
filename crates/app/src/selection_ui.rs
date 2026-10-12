@@ -58,6 +58,7 @@ pub fn build_overlay(
         marquee: marquee.map(|m| Rect::from_points(view * m.start, view * m.current)),
         guides: Vec::new(),
         scale,
+        accent: None,
     }
 }
 
