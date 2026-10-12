@@ -64,6 +64,8 @@ pub enum Edit {
     Intersect,
     Exclude,
     Flatten,
+    /// Group with the bottom layer as a mask.
+    Mask,
     BringForward,
     SendBackward,
     SelectAll,
@@ -733,6 +735,14 @@ impl Panels {
                 "Ctrl+E",
                 actions,
                 Action::Edit(Edit::Flatten),
+            );
+            menu_item(
+                ui,
+                icons::SCAN_EYE,
+                "Use as mask",
+                "Ctrl+Alt+M",
+                actions,
+                Action::Edit(Edit::Mask),
             );
             ui.separator();
             menu_item(

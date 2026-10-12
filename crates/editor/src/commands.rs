@@ -168,6 +168,32 @@ pub fn boolean(
     group_as(doc, history, ids, NodeKind::BooleanOp(kind), label)
 }
 
+/// Groups the layers and makes the bottom one a mask: it clips the others to its outline.
+pub fn mask(
+    doc: &mut Document,
+    history: &mut History,
+    ids: &[NodeId],
+) -> Result<Option<NodeId>, DocError> {
+    let Some(g) = group_as(doc, history, ids, NodeKind::Group, "Mask group")? else {
+        return Ok(None);
+    };
+    let Some(&bottom) = doc.children(g).first() else {
+        return Ok(Some(g));
+    };
+    let mut flags = doc.node(bottom).map(|n| n.flags).unwrap_or_default();
+    flags.set(ude_core::scene::NodeFlags::IS_MASK, true);
+    let mut tx = Transaction::new("Use as mask");
+    tx.apply(
+        doc,
+        Op::Set {
+            id: bottom,
+            value: Prop::Flags(flags),
+        },
+    )?;
+    history.commit(doc, tx);
+    Ok(Some(g))
+}
+
 /// Replaces each selected boolean group by a single vector layer with its result.
 /// Returns the new layers.
 pub fn flatten(

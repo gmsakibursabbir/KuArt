@@ -39,9 +39,7 @@ pub fn export_with(doc: &Document, id: NodeId, lines: LineLayout<'_>) -> Result<
         .node(id)
         .is_some_and(|n| matches!(n.kind, NodeKind::Page | NodeKind::Document));
     if is_page {
-        for &c in doc.children(id) {
-            w.node(c);
-        }
+        w.children(doc.children(id));
     } else {
         let parent = doc
             .node(id)
@@ -118,6 +116,43 @@ impl Writer<'_> {
         format!("{prefix}{}", self.next_id)
     }
 
+    /// Siblings bottom to top; a mask layer clips every sibling above it (`<clipPath>`).
+    fn children(&mut self, ids: &[NodeId]) {
+        let mut open = 0;
+        for &c in ids {
+            let Some(n) = self.doc.node(c) else { continue };
+            if n.flags.contains(NodeFlags::IS_MASK) {
+                if !n.is_visible() {
+                    continue;
+                }
+                let combined;
+                let m = if matches!(n.kind, NodeKind::BooleanOp(_)) {
+                    let Some(v) = ude_boolean::as_vector(self.doc, c) else {
+                        continue;
+                    };
+                    combined = v;
+                    &combined
+                } else {
+                    n
+                };
+                let clip = self.id("mask");
+                let t = format!(" transform=\"{}\"", matrix(&m.transform));
+                let _ = write!(
+                    self.defs,
+                    "<clipPath id=\"{clip}\">{}</clipPath>",
+                    shape(m, &t)
+                );
+                let _ = write!(self.body, "<g clip-path=\"url(#{clip})\">");
+                open += 1;
+                continue;
+            }
+            self.node(c);
+        }
+        for _ in 0..open {
+            self.body.push_str("</g>");
+        }
+    }
+
     fn node(&mut self, id: NodeId) {
         let Some(n) = self.doc.node(id) else { return };
         // A boolean group is written as its combined path.
@@ -155,14 +190,10 @@ impl Writer<'_> {
                     shape(n, "")
                 );
                 let _ = write!(self.body, "<g clip-path=\"url(#{clip})\">");
-                for &c in &n.children {
-                    self.node(c);
-                }
+                self.children(&n.children);
                 self.body.push_str("</g>");
             } else {
-                for &c in &n.children {
-                    self.node(c);
-                }
+                self.children(&n.children);
             }
         }
         if let Some(s) = n
@@ -641,6 +672,32 @@ mod tests {
         assert!(svg.contains("font-weight=\"600\""));
         assert!(svg.contains("<ellipse cx=\"5\" cy=\"5\" rx=\"5\" ry=\"5\" fill=\"#ff0000\"/>"));
         assert!(svg.ends_with("</svg>\n"));
+    }
+
+    #[test]
+    fn mask_becomes_a_clip_path_around_the_layers_above() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let page = doc
+            .build_child(root, Node::new(NodeKind::Page, Symbol::EMPTY))
+            .unwrap();
+        let mut mask = Node::new(NodeKind::Ellipse(None), Symbol::EMPTY).with_size(40.0, 40.0);
+        mask.flags.set(NodeFlags::IS_MASK, true);
+        doc.build_child(page, mask).unwrap();
+        doc.build_child(
+            page,
+            Node::new(NodeKind::Rectangle, Symbol::EMPTY)
+                .with_size(40.0, 40.0)
+                .with_fills(Paints::new(vec![Paint::solid(Color::BLACK)])),
+        )
+        .unwrap();
+        let svg = export(&doc, page).unwrap();
+        assert!(svg.contains("<clipPath id=\"mask1\"><ellipse"), "{svg}");
+        let g = svg.find("clip-path=\"url(#mask1)\"").unwrap();
+        assert!(
+            svg[g..].contains("<rect"),
+            "the rectangle is inside the clip: {svg}"
+        );
     }
 
     #[test]

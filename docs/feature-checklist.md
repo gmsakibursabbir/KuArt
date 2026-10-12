@@ -59,7 +59,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Gradient stop editing
 - ✓ Opacity and blend modes
 - ~ Masks and clipping masks (frame clipping ✓; masks kept, not composited)
-- ✗ Image masks
+- ✓ Masks (vector outline; Ctrl+Alt+M) · ✗ alpha/luminance masks
 - ✗ Vector crop and image crop
 - ✓ SVG import and editing (import + edit as layers)
 - ✓ SVG path preservation

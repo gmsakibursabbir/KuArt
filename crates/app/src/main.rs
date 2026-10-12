@@ -787,6 +787,7 @@ impl App {
             KeyCode::KeyI if ctrl && alt => self.boolean(BoolOpKind::Intersect),
             KeyCode::KeyX if ctrl && alt => self.boolean(BoolOpKind::Exclude),
             KeyCode::KeyE if ctrl => self.structural("flatten"),
+            KeyCode::KeyM if ctrl && alt => self.structural("mask"),
             KeyCode::KeyG if ctrl && shift => self.structural("ungroup"),
             KeyCode::KeyG if ctrl => self.structural("group"),
             KeyCode::BracketRight if ctrl => self.arrange(if shift {
@@ -1673,6 +1674,7 @@ impl App {
             "duplicate" => c::duplicate(doc, history, &ids),
             "group" => c::group(doc, history, &ids).map(|g| g.into_iter().collect()),
             "flatten" => c::flatten(doc, history, &ids),
+            "mask" => c::mask(doc, history, &ids).map(|g| g.into_iter().collect()),
             _ => c::ungroup(doc, history, &ids),
         };
         match result {
@@ -1728,6 +1730,7 @@ impl App {
             E::Intersect => self.boolean(BoolOpKind::Intersect),
             E::Exclude => self.boolean(BoolOpKind::Exclude),
             E::Flatten => self.structural("flatten"),
+            E::Mask => self.structural("mask"),
             E::BringForward => self.arrange(Arrange::Forward),
             E::SendBackward => self.arrange(Arrange::Backward),
             E::SelectAll => {

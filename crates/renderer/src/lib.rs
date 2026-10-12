@@ -100,9 +100,7 @@ pub fn paint_page(
         viewport: Rect::new(0.0, 0.0, view.width, view.height),
         stats: FrameStats::default(),
     };
-    for &child in doc.children(page) {
-        cx.node(child, view.transform, 1.0);
-    }
+    cx.children(doc.children(page), view.transform, 1.0);
     cx.stats
 }
 
@@ -188,7 +186,7 @@ impl<P: Painter> Cx<'_, P> {
     fn node(&mut self, id: NodeId, parent: Affine, alpha: f32) {
         let Some(n) = self.doc.node(id) else { return };
         self.stats.visited += 1;
-        // Masks are not composited yet (phase 2); never paint the mask shape itself.
+        // A mask's shape clips its siblings (see `children`); it is never painted itself.
         if !n.is_visible() || n.opacity <= 0.0 || n.flags.contains(NodeFlags::IS_MASK) {
             return;
         }
@@ -258,14 +256,45 @@ impl<P: Painter> Cx<'_, P> {
 
         self.fills(n, transform, own.as_ref(), inner_alpha);
         if !leaf {
-            for &child in &n.children {
-                self.node(child, transform, inner_alpha);
-            }
+            self.children(&n.children, transform, inner_alpha);
         }
         if let Some(g) = &own {
             self.strokes(n, transform, g, inner_alpha);
         }
         if layer {
+            self.painter.pop_layer();
+        }
+    }
+
+    /// Paints siblings bottom to top. A mask layer (Figma, Sketch, XD) clips every sibling
+    /// above it to its outline, until the end of the parent.
+    // shortcut: masks clip by outline (vector mask); alpha/luminance masks would need a
+    // mask layer in the painter, add when a file needs soft masks.
+    fn children(&mut self, ids: &[NodeId], transform: Affine, alpha: f32) {
+        let mut masks = 0;
+        for &c in ids {
+            let Some(n) = self.doc.node(c) else { continue };
+            if n.flags.contains(NodeFlags::IS_MASK) {
+                if !n.is_visible() {
+                    continue;
+                }
+                let t = transform * convert::affine(&n.transform);
+                let shape = if matches!(n.kind, NodeKind::BooleanOp(_)) {
+                    self.caches.boolean(self.doc, c)
+                } else {
+                    local_geometry(n)
+                };
+                if let Some(g) = shape {
+                    let normal = BlendMode::from(vello::peniko::Mix::Normal);
+                    self.painter.push_layer(t, &g.geom(), normal, 1.0);
+                    self.stats.layers += 1;
+                    masks += 1;
+                }
+                continue;
+            }
+            self.node(c, transform, alpha);
+        }
+        for _ in 0..masks {
             self.painter.pop_layer();
         }
     }
@@ -848,6 +877,28 @@ mod tests {
         cx.flush();
         cx.render(&mut pixmap, &mut resources);
         (pixmap.data_as_u8_slice().to_vec(), stats)
+    }
+
+    #[test]
+    fn mask_clips_the_layers_above_it() {
+        let red = Paints::new(vec![Paint::solid(Color {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        })]);
+        let mut mask = Node::new(NodeKind::Ellipse(None), Symbol::EMPTY).with_size(40.0, 40.0);
+        mask.flags.set(NodeFlags::IS_MASK, true);
+        let (doc, page) = page_with(vec![
+            mask,
+            Node::new(NodeKind::Rectangle, Symbol::EMPTY)
+                .with_size(40.0, 40.0)
+                .with_fills(red),
+        ]);
+        let (px, _) = render_cpu(&doc, page, 40, 40);
+        let at = |x: usize, y: usize| &px[(y * 40 + x) * 4..][..4];
+        assert_eq!(at(20, 20), &[255, 0, 0, 255], "inside the mask");
+        assert_eq!(at(1, 1), &[0, 0, 0, 0], "outside the ellipse is clipped");
     }
 
     #[test]

@@ -38,7 +38,7 @@ Priority: **P0** blocks everyday use · **P1** expected by professionals · **P2
 | Lock / hide from the canvas, select matching layers | ✓ | ✗ | P1 |
 | Rotation, flip, constraints-aware resize | ✓ | ~ rotate/resize, no flip shortcuts | P1 |
 | Corner radius per corner, corner smoothing (squircle) | ✓ | ~ data imported, edit uniform only | P1 |
-| Masks (layer, clip groups, alpha masks) | ✓ | ~ data kept, not rendered | P0 |
+| Masks (layer, clip groups, alpha masks) | ✓ | ✓ vector masks rendered and exported · ✗ alpha masks | P0 |
 | Image crop, fill/fit/tile, adjustments (exposure, contrast…) | ✓ | ~ fill/fit only | P1 |
 | Scale tool (scale strokes and effects) | ✓ | ✗ | P2 |
 | Slices / export regions | ✓ | ✗ | P1 |
@@ -150,6 +150,6 @@ Priority: **P0** blocks everyday use · **P1** expected by professionals · **P2
 1. UI redesign: Lucide icons, Kuduy lime (dark) and blue (light), menu, pages, layer toggles,
    home screen with recent files, Dev Mode panel with code and copy.
 2. Export compression options.
-3. P0 editing: align/distribute, on-canvas text, masks rendering,
+3. P0 editing: align/distribute, on-canvas text,
    components that update, auto-layout reflow, autosave and recovery, drag-and-drop.
 4. P2P WebRTC collaboration (design in `docs/collaboration.md`).
