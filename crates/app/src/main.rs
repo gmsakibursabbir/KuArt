@@ -25,6 +25,7 @@ mod google_fonts;
 mod recents;
 mod selection_ui;
 mod settings;
+mod tabs;
 mod tools;
 
 use std::path::PathBuf;
@@ -164,6 +165,9 @@ struct App {
     home: bool,
     recents: Vec<ude_ui::Recent>,
     recents_dirty: bool,
+    /// Open documents; the active one is `None` here (its state is in the fields above).
+    tabs: Vec<Option<tabs::DocTab>>,
+    active_tab: Option<usize>,
 }
 
 enum Drag {
@@ -232,6 +236,8 @@ impl App {
             home: false,
             recents: Vec::new(),
             recents_dirty: true,
+            tabs: Vec::new(),
+            active_tab: None,
             index,
             selection: Selection::default(),
             hover: None,
@@ -313,6 +319,7 @@ impl App {
         page: NodeId,
     ) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
         let diagnostics = self.diagnostics.then(|| self.diagnostic_rows());
+        let tab_infos = self.tab_infos();
         if self.home && self.recents_dirty {
             self.recents = recents::load();
             self.recents_dirty = false;
@@ -352,6 +359,8 @@ impl App {
             diagnostics: diagnostics.as_deref(),
             recents: &self.recents,
             home: self.home,
+            tabs: &tab_infos,
+            active_tab: if self.home { None } else { self.active_tab },
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -435,10 +444,10 @@ impl App {
                 Action::Rename(id, name) => self.rename(id, &name),
                 Action::New => self.new_document(),
                 Action::Import => self.import_dialog(),
-                Action::OpenRecent(path) => {
-                    if self.confirm_discard() {
-                        self.open_path(path);
-                    }
+                Action::OpenRecent(path) => self.open_path(path),
+                Action::SwitchTab(i) => self.switch_tab(i),
+                Action::CloseTab(i) => {
+                    self.close_tab(i);
                 }
                 Action::RemoveRecent(path) => {
                     recents::remove(&path);
@@ -659,6 +668,20 @@ impl App {
         match code {
             KeyCode::KeyO if ctrl => self.open_dialog(),
             KeyCode::KeyN if ctrl => self.new_document(),
+            KeyCode::KeyW if ctrl => {
+                if let Some(i) = self.active_tab.filter(|_| !self.home) {
+                    self.close_tab(i);
+                }
+            }
+            KeyCode::Tab if ctrl && !self.tabs.is_empty() => {
+                let n = self.tabs.len();
+                let cur = self.active_tab.unwrap_or(0);
+                self.switch_tab(if shift {
+                    (cur + n - 1) % n
+                } else {
+                    (cur + 1) % n
+                });
+            }
             KeyCode::KeyA if alt => self.align(ude_editor::Align::Left),
             KeyCode::KeyD if alt => self.align(ude_editor::Align::Right),
             KeyCode::KeyH if alt && shift => self.align(ude_editor::Align::DistributeH),
@@ -1134,7 +1157,11 @@ impl ApplicationHandler<AppEvent> for App {
                     self.redraw();
                 }
             }
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                if self.close_all() {
+                    event_loop.exit();
+                }
+            }
             WindowEvent::Resized(size) => {
                 if let Some(b) = &mut self.backend {
                     b.resize(size.width, size.height);
@@ -1224,6 +1251,10 @@ fn main() -> std::process::ExitCode {
     let mut app = App::new(options, doc, title);
     app.panels.theme = settings::load_theme();
     app.home = home;
+    if !home {
+        app.tabs.push(None);
+        app.active_tab = Some(0);
+    }
     app.proxy = Some(event_loop.create_proxy());
     app.saved_revision = app.doc.revision();
     if let Err(e) = event_loop.run_app(&mut app) {

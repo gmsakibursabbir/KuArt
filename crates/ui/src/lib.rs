@@ -145,6 +145,8 @@ pub enum Action {
     ZoomOut,
     Zoom100,
     ToggleDiagnostics,
+    SwitchTab(usize),
+    CloseTab(usize),
     Align(ude_editor::Align),
     /// New comment pinned at the centre of the view.
     AddComment(String),
@@ -153,6 +155,12 @@ pub enum Action {
     DeleteComment(usize),
     /// Centre the view on a comment.
     FocusComment(usize),
+}
+
+/// One open document in the tab strip.
+pub struct TabInfo {
+    pub title: String,
+    pub dirty: bool,
 }
 
 /// Read-only facts the bars display.
@@ -175,6 +183,9 @@ pub struct Status<'a> {
     pub recents: &'a [Recent],
     /// Show the home screen instead of the editor.
     pub home: bool,
+    pub tabs: &'a [TabInfo],
+    /// Selected tab; `None` while the home screen is shown.
+    pub active_tab: Option<usize>,
 }
 
 #[derive(Default)]
@@ -221,6 +232,7 @@ impl Panels {
         t: &Tokens,
     ) -> (Vec<Action>, Rect) {
         let mut actions = Vec::new();
+        tab_strip(root, status, t, &mut actions);
         if status.home {
             self.home
                 .ui(root, status.recents, &mut self.theme, t, &mut actions);
@@ -694,6 +706,153 @@ fn diagnostics(root: &mut Ui, status: &Status<'_>, t: &Tokens) {
         });
 }
 
+/// Document tabs above everything (Figma desktop style): Home, one tab per file, +.
+fn tab_strip(root: &mut Ui, status: &Status<'_>, t: &Tokens, actions: &mut Vec<Action>) {
+    Panel::top("tabs")
+        .exact_size(34.0)
+        .frame(
+            egui::Frame::new()
+                .fill(t.bg_app)
+                .inner_margin(egui::Margin {
+                    left: 6,
+                    right: 6,
+                    top: 4,
+                    bottom: 0,
+                }),
+        )
+        .show_inside(root, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let home_active = status.active_tab.is_none();
+                if tab(ui, t, Some(icons::HOUSE), "", false, home_active, None)
+                    .0
+                    .clicked()
+                {
+                    actions.push(Action::Home);
+                }
+                for (i, info) in status.tabs.iter().enumerate() {
+                    let (resp, close) = tab(
+                        ui,
+                        t,
+                        None,
+                        &info.title,
+                        info.dirty,
+                        status.active_tab == Some(i),
+                        Some(i),
+                    );
+                    if close {
+                        actions.push(Action::CloseTab(i));
+                    } else if resp.clicked() {
+                        actions.push(Action::SwitchTab(i));
+                    }
+                    if resp.middle_clicked() {
+                        actions.push(Action::CloseTab(i));
+                    }
+                }
+                if icon_button_sized(ui, t, icons::PLUS, "New design  Ctrl+N", false, 26.0, 14.0)
+                    .clicked()
+                {
+                    actions.push(Action::New);
+                }
+            });
+        });
+}
+
+/// One tab; returns its response and whether its close button was clicked.
+fn tab(
+    ui: &mut Ui,
+    t: &Tokens,
+    glyph: Option<&str>,
+    title: &str,
+    dirty: bool,
+    active: bool,
+    closable: Option<usize>,
+) -> (egui::Response, bool) {
+    let font = FontId::proportional(12.0);
+    let text_w = if title.is_empty() {
+        0.0
+    } else {
+        ui.fonts_mut(|f| {
+            f.layout_no_wrap(title.to_owned(), font.clone(), t.text_primary)
+                .size()
+                .x
+        })
+        .min(180.0)
+    };
+    let w = if glyph.is_some() { 36.0 } else { text_w + 52.0 };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 30.0), egui::Sense::click());
+    let p = ui.painter();
+    let bg = if active {
+        t.bg_panel
+    } else if resp.hovered() {
+        t.bg_hover
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    p.rect_filled(
+        rect,
+        egui::CornerRadius {
+            nw: 7,
+            ne: 7,
+            sw: 0,
+            se: 0,
+        },
+        bg,
+    );
+    let color = if active {
+        t.text_primary
+    } else {
+        t.text_secondary
+    };
+    if let Some(g) = glyph {
+        p.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            g,
+            widgets::icon_font(15.0),
+            color,
+        );
+        return (resp.on_hover_text("Home: recent files"), false);
+    }
+    let text_rect = Rect::from_min_max(
+        egui::pos2(rect.left() + 12.0, rect.top()),
+        egui::pos2(rect.right() - 34.0, rect.bottom()),
+    );
+    p.with_clip_rect(text_rect).text(
+        egui::pos2(text_rect.left(), rect.center().y),
+        Align2::LEFT_CENTER,
+        title,
+        font,
+        color,
+    );
+    // Close button; an unsaved dot until hovered.
+    let close_rect = Rect::from_center_size(
+        egui::pos2(rect.right() - 16.0, rect.center().y),
+        egui::vec2(20.0, 20.0),
+    );
+    let mut closed = false;
+    if closable.is_some() {
+        let close = ui.interact(close_rect, resp.id.with("close"), egui::Sense::click());
+        if dirty && !resp.hovered() && !close.hovered() {
+            ui.painter()
+                .circle_filled(close_rect.center(), 3.5, t.text_secondary);
+        } else if resp.hovered() || close.hovered() || active {
+            if close.hovered() {
+                ui.painter().rect_filled(close_rect, 5.0, t.bg_hover);
+            }
+            ui.painter().text(
+                close_rect.center(),
+                Align2::CENTER_CENTER,
+                icons::X,
+                widgets::icon_font(12.0),
+                t.text_secondary,
+            );
+        }
+        closed = close.on_hover_text("Close  Ctrl+W").clicked();
+    }
+    (resp.on_hover_text(title.to_owned()), closed)
+}
+
 /// Floating tool bar centred at the bottom of the canvas (Figma UI3 style).
 fn tool_pill(
     ctx: &egui::Context,
@@ -801,6 +960,8 @@ mod tests {
             diagnostics: None,
             recents: &[],
             home,
+            tabs: &[],
+            active_tab: None,
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

@@ -86,9 +86,6 @@ pub(crate) fn file_name(path: &Path) -> String {
 
 impl App {
     pub(crate) fn open_dialog(&mut self) {
-        if !self.confirm_discard() {
-            return;
-        }
         if let Some(path) = rfd::FileDialog::new()
             .set_title("Open")
             .add_filter("Designs and images", OPENABLE)
@@ -102,9 +99,6 @@ impl App {
     /// Opens another app's file (Figma, Sketch, XD, Photoshop, Illustrator, PDF, SVG, images)
     /// as a new KuArt document.
     pub(crate) fn import_dialog(&mut self) {
-        if !self.confirm_discard() {
-            return;
-        }
         if let Some(path) = rfd::FileDialog::new()
             .set_title("Import")
             .add_filter(
@@ -125,8 +119,7 @@ impl App {
     pub(crate) fn open_path(&mut self, path: PathBuf) {
         match load_path(&path) {
             Ok(doc) => {
-                self.replace_document(doc, Some(path.clone()));
-                self.home = false;
+                self.open_in_new_tab(doc, Some(path.clone()));
                 crate::recents::touch(&path);
                 if let Some(page) = self.page {
                     crate::recents::write_thumbnail(&path, &self.doc, page, &mut self.caches);
@@ -145,9 +138,6 @@ impl App {
 
     /// A new document with one desktop-sized frame.
     pub(crate) fn new_document(&mut self) {
-        if !self.confirm_discard() {
-            return;
-        }
         let mut doc = blank_document();
         let page = doc.children(doc.root())[0];
         let name = doc.strings.intern("Desktop");
@@ -159,18 +149,15 @@ impl App {
         frame.flags.set(ude_core::NodeFlags::CLIPS_CONTENT, true);
         let _ = doc.build_child(page, frame);
         let _ = doc.take_changes();
-        self.replace_document(doc, None);
-        self.home = false;
+        self.open_in_new_tab(doc, None);
     }
 
-    /// Closes the document and shows the home screen.
+    /// Shows the home screen; open tabs stay open.
     pub(crate) fn go_home(&mut self) {
-        if !self.confirm_discard() {
-            return;
-        }
-        self.replace_document(blank_document(), None);
         self.home = true;
         self.recents_dirty = true;
+        self.update_title();
+        self.redraw();
     }
 
     /// Asks to save unsaved changes; false when the user cancels.
