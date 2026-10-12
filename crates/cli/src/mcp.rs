@@ -629,7 +629,7 @@ fn tool_list() -> Value {
         ),
         tool(
             "open_document",
-            "Open a .krt, Figma (.fig/.jam/.deck/…), .xd, .psd, .svg or image file (replaces the open document).",
+            "Open a .krt, Figma (.fig/.jam/.deck/…), .sketch, .xd, .psd, .ai, .pdf, .svg or image file (replaces the open document).",
             json!({"path": {"type": "string"}}),
             &["path"]
         ),

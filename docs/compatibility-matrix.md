@@ -31,3 +31,13 @@ the compatibility suite exists (M9+).
 | Layer effects | ○ | ○ | P | – | phase 2 |
 | Repeat grid | – | ~ (as groups) | – | – | phase 2 |
 | Native export (round trip) | ✗ | ✗ | ○ (phase 4) | ○ | — |
+
+## More formats (0.1)
+
+| Format | Extensions | Imported | Not yet |
+|---|---|---|---|
+| Figma products | `.fig` `.jam` `.deck` `.buzz` `.site` `.make` | Same importer as `.fig`; FigJam stickies/shapes keep their text, connectors become vectors, slides become frames | Product-specific behaviour (widgets, code, site interactions) |
+| Sketch (43+) | `.sketch` | Pages, artboards, groups, shapes and shape groups, text runs, bitmaps, symbols (expanded, text overrides), fills/gradients/images, borders, shadows, blurs, opacity, blend, rotation/flips | Boolean results (paths combined), nested symbol overrides other than text, pre-43 files |
+| Illustrator | `.ai` (PDF-compatible) | Through its PDF: paths, colours (gray/RGB/CMYK), opacity, transforms, forms, images, text | Native AI data (live effects, symbols), clipping, gradients/patterns (flat colour) |
+| PDF | `.pdf` | Each page → artboard: paths, colours, opacity, forms, images (JPEG, 8-bit, soft masks), text via ToUnicode | Clipping, shadings, patterns, Type 3 fonts |
+| KuArt | `.krt` (legacy `.design`) | Everything | — |

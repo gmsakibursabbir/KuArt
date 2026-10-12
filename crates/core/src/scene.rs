@@ -61,6 +61,8 @@ pub enum SourceFormat {
     Svg,
     Pdf,
     Raster,
+    Sketch,
+    Illustrator,
 }
 
 /// Per-feature import fidelity, surfaced in the UI and the compatibility matrix.

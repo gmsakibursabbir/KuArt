@@ -7,8 +7,8 @@ use ude_core::{Document, NodeKind};
 use crate::App;
 
 const OPENABLE: &[&str] = &[
-    "krt", "design", "fig", "jam", "deck", "buzz", "site", "make", "psd", "psb", "svg", "png",
-    "jpg", "jpeg", "webp",
+    "krt", "design", "fig", "jam", "deck", "buzz", "site", "make", "sketch", "ai", "pdf", "psd",
+    "psb", "svg", "png", "jpg", "jpeg", "webp",
 ];
 
 /// Loads a `.krt` document or imports another format.
@@ -27,6 +27,23 @@ pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
         "psd" | "psb" => {
             let bytes = std::fs::read(path).map_err(|e| err(&e))?;
             let im = ude_format_psd::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
+        "sketch" => {
+            let bytes = std::fs::read(path).map_err(|e| err(&e))?;
+            let im = ude_format_sketch::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
+        "ai" | "pdf" => {
+            let bytes = std::fs::read(path).map_err(|e| err(&e))?;
+            let ai = ext == "ai";
+            let im = ude_format_pdf::import(&bytes, &file_name(path), ai).map_err(|e| err(&e))?;
             for w in &im.warnings {
                 eprintln!("warning: {w}");
             }

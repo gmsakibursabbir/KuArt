@@ -26,7 +26,7 @@ ChangesAssociations=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "associate"; Description: "Open .krt, .fig, .xd and .psd files with KuArt"; GroupDescription: "File associations:"
+Name: "associate"; Description: "Open .krt, .fig, .sketch, .xd, .psd and .ai files with KuArt"; GroupDescription: "File associations:"
 
 [Files]
 Source: "{#BinDir}\design-editor.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -48,6 +48,8 @@ Root: HKA; Subkey: "Software\Classes\.design\OpenWithProgids"; ValueType: string
 Root: HKA; Subkey: "Software\Classes\.fig\OpenWithProgids"; ValueType: string; ValueName: "KuArt.Design"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.xd\OpenWithProgids"; ValueType: string; ValueName: "KuArt.Design"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.psd\OpenWithProgids"; ValueType: string; ValueName: "KuArt.Design"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.sketch\OpenWithProgids"; ValueType: string; ValueName: "KuArt.Design"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.ai\OpenWithProgids"; ValueType: string; ValueName: "KuArt.Design"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associate
 
 [Run]
 Filename: "{app}\design-editor.exe"; Description: "{cm:LaunchProgram,KuArt}"; Flags: nowait postinstall skipifsilent

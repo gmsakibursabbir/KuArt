@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/formats/native", "crates/benchmarks", "crates/cli", "crates/renderer", "crates/app", "crates/spatial", "crates/editor", "crates/ui", "crates/formats/raster", "crates/formats/svg", "crates/formats/svg-import", "crates/codegen", "crates/formats/psd", "crates/formats/fig", "crates/formats/zip", "crates/formats/xd", "crates/diagnostics"]
+members = ["crates/core", "crates/formats/native", "crates/benchmarks", "crates/cli", "crates/renderer", "crates/app", "crates/spatial", "crates/editor", "crates/ui", "crates/formats/raster", "crates/formats/svg", "crates/formats/svg-import", "crates/codegen", "crates/formats/psd", "crates/formats/fig", "crates/formats/zip", "crates/formats/xd", "crates/diagnostics", "crates/formats/sketch", "crates/formats/pdf"]
 
 [workspace.package]
 version = "0.1.0"

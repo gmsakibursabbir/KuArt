@@ -31,6 +31,8 @@ ude-format-svg-import = { path = "../formats/svg-import" }
 ude-format-psd = { path = "../formats/psd" }
 ude-format-fig = { path = "../formats/fig" }
 ude-format-xd = { path = "../formats/xd" }
+ude-format-sketch = { path = "../formats/sketch" }
+ude-format-pdf = { path = "../formats/pdf" }
 ude-diagnostics = { path = "../diagnostics" }
 ureq = "3"
 

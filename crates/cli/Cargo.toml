@@ -25,6 +25,8 @@ ude-codegen = { path = "../codegen" }
 ude-format-psd = { path = "../formats/psd" }
 ude-format-fig = { path = "../formats/fig" }
 ude-format-xd = { path = "../formats/xd" }
+ude-format-sketch = { path = "../formats/sketch" }
+ude-format-pdf = { path = "../formats/pdf" }
 
 [lints]
 workspace = true

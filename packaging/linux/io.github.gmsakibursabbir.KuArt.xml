@@ -15,6 +15,11 @@
     <glob pattern="*.site"/>
     <glob pattern="*.make"/>
   </mime-type>
+  <mime-type type="application/x-sketch">
+    <comment>Sketch design</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.sketch"/>
+  </mime-type>
   <mime-type type="application/x-adobe-xd">
     <comment>Adobe XD design</comment>
     <sub-class-of type="application/zip"/>

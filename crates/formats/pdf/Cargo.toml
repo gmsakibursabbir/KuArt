@@ -1,0 +1,16 @@
+[package]
+name = "ude-format-pdf"
+description = "PDF and Illustrator (.ai, PDF-compatible) import: vector paths, text, images"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+blake3 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+lopdf = { version = "0.42.0", default-features = false }
+ude-core = { path = "../../core" }
+
+[lints]
+workspace = true

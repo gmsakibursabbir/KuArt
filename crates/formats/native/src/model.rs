@@ -163,7 +163,9 @@ wire_enum!(SourceFormat {
     Psd,
     Svg,
     Pdf,
-    Raster
+    Raster,
+    Sketch,
+    Illustrator
 });
 wire_enum!(Codec {
     Png,

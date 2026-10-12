@@ -29,7 +29,7 @@ USAGE:
     design-editor-cli mcp              (MCP server on stdio, for AI agents)
     design-editor-cli --version
 
-Input: .krt (and legacy .design), .fig/.jam/.deck/.buzz/.site/.make, .xd, .psd/.psb, .svg and images (.png .jpg .webp).
+Input: .krt (and legacy .design), .fig/.jam/.deck/.buzz/.site/.make, .sketch, .xd, .ai, .pdf, .psd/.psb, .svg and images (.png .jpg .webp).
 Output: .krt, .png or .svg (first page).";
 
 fn main() -> ExitCode {
@@ -116,6 +116,31 @@ fn open(path: &Path) -> Result<Document, String> {
                 .file_name()
                 .map_or_else(|| "document".into(), |n| n.to_string_lossy().into_owned());
             let im = ude_format_fig::import(&bytes, &name)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
+        "sketch" => {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let name = path
+                .file_name()
+                .map_or_else(|| "document".into(), |n| n.to_string_lossy().into_owned());
+            let im = ude_format_sketch::import(&bytes, &name)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
+        "ai" | "pdf" => {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let name = path
+                .file_name()
+                .map_or_else(|| "document".into(), |n| n.to_string_lossy().into_owned());
+            let ai = extension(path) == "ai";
+            let im = ude_format_pdf::import(&bytes, &name, ai)
                 .map_err(|e| format!("{}: {e}", path.display()))?;
             for w in &im.warnings {
                 eprintln!("warning: {w}");
