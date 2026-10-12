@@ -121,11 +121,14 @@ impl App {
         };
         let size = match text.sizing {
             TextSizing::AutoWidth => {
-                let (w, h) = self.text.measure(text, &self.doc.strings, f32::INFINITY);
+                let (w, h) = self
+                    .caches
+                    .text
+                    .measure(text, &self.doc.strings, f32::INFINITY);
                 Size::new(w.ceil(), h.ceil())
             }
             TextSizing::AutoHeight => {
-                let (_, h) = self.text.measure(text, &self.doc.strings, n.size.w);
+                let (_, h) = self.caches.text.measure(text, &self.doc.strings, n.size.w);
                 Size::new(n.size.w, h.ceil())
             }
             TextSizing::Fixed | TextSizing::Truncate => return,

@@ -35,7 +35,7 @@ use ude_editor::{
     Gesture, HandleIndex, Selection, SelectionMode, Snapper, drill, hit_test, marquee_select,
     resolve_target,
 };
-use ude_renderer::TextEngine;
+use ude_renderer::RenderCaches;
 use ude_renderer::View;
 use ude_renderer::vello::kurbo::{Point, Rect, Vec2};
 use ude_renderer::vello::peniko::Color;
@@ -90,12 +90,23 @@ fn parse_args() -> Result<Options, String> {
 fn load_document(o: &Options) -> Result<(Document, String), String> {
     match &o.file {
         Some(path) => {
-            let doc =
-                ude_format_native::load_from_path(path, &ude_format_native::Limits::default())
-                    .map_err(|e| format!("{}: {e}", path.display()))?;
             let name = path
                 .file_name()
                 .map_or_else(|| "Untitled".into(), |n| n.to_string_lossy().into_owned());
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let err = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
+            let doc = match ext.as_str() {
+                "png" | "jpg" | "jpeg" | "webp" => {
+                    let bytes = std::fs::read(path).map_err(|e| err(&e))?;
+                    ude_format_raster::import(bytes, &name).map_err(|e| err(&e))?
+                }
+                _ => ude_format_native::load_from_path(path, &ude_format_native::Limits::default())
+                    .map_err(|e| err(&e))?,
+            };
             Ok((doc, name))
         }
         None => {
@@ -145,7 +156,7 @@ struct App {
     canvas: Rect,
     panel_hover: Option<NodeId>,
     applied_theme: Option<(ThemeChoice, bool)>,
-    text: TextEngine,
+    caches: RenderCaches,
     tool: Tool,
 }
 
@@ -199,7 +210,7 @@ impl App {
             canvas: Rect::ZERO,
             panel_hover: None,
             applied_theme: None,
-            text: TextEngine::default(),
+            caches: RenderCaches::default(),
             tool: Tool::Move,
             index,
             selection: Selection::default(),
@@ -290,7 +301,7 @@ impl App {
             self.applied_theme = Some((self.panels.theme, system_dark));
         }
         let renderer = self.backend.as_ref().map(Backend::name).unwrap_or_default();
-        let missing = self.text.missing_fonts();
+        let missing = self.caches.text.missing_fonts();
         let status = Status {
             title: &self.title,
             zoom: self.camera.zoom,
@@ -445,7 +456,7 @@ impl App {
             &overlay,
             bg,
             ui.as_ref(),
-            &mut self.text,
+            &mut self.caches,
         ) {
             Ok(FrameResult::Presented(stats)) => {
                 if self.options.stats {
@@ -897,7 +908,8 @@ impl ApplicationHandler for App {
             .with_title(format!("{} — KuArt", self.title))
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             .with_min_inner_size(LogicalSize::new(480.0, 320.0))
-            .with_visible(false);
+            .with_visible(false)
+            .with_window_icon(window_icon());
         let window = match event_loop.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => return fatal(event_loop, &format!("cannot create window: {e}")),
@@ -1057,4 +1069,11 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::FAILURE;
     }
     std::process::ExitCode::SUCCESS
+}
+
+/// App icon (generated from assets/icon.png by build.rs).
+fn window_icon() -> Option<winit::window::Icon> {
+    const SIZE: u32 = 64;
+    let rgba = include_bytes!(concat!(env!("OUT_DIR"), "/window_icon.rgba"));
+    winit::window::Icon::from_rgba(rgba.to_vec(), SIZE, SIZE).ok()
 }

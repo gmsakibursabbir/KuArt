@@ -10,17 +10,26 @@
 //! until M7, and masks are skipped until phase 2.
 
 pub mod convert;
+pub mod images;
 pub mod overlay;
 pub mod painter;
 pub mod text;
 
+pub use images::{DecodedImage, ImageCache};
 pub use overlay::{Outline, Overlay, paint_overlay};
 pub use painter::{BrushSpec, CpuPainter, Geom, GlyphPos, Painter};
 pub use text::TextEngine;
+
+/// Per-window caches the traversal needs: text layouts and decoded images.
+#[derive(Default)]
+pub struct RenderCaches {
+    pub text: TextEngine,
+    pub images: ImageCache,
+}
 pub use {vello, vello_cpu};
 
 use ude_core::scene::NodeFlags;
-use ude_core::styles::Effect;
+use ude_core::styles::{Effect, ImageScaleMode, PaintKind};
 use ude_core::{Document, Node, NodeId, NodeKind};
 use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, RoundedRectRadii};
 use vello::peniko::{BlendMode, Fill};
@@ -53,12 +62,13 @@ pub fn paint_page(
     page: NodeId,
     view: &View,
     painter: &mut impl Painter,
-    text: &mut TextEngine,
+    caches: &mut RenderCaches,
 ) -> FrameStats {
+    caches.images.next_frame();
     let mut cx = Cx {
         doc,
         painter,
-        text,
+        caches,
         viewport: Rect::new(0.0, 0.0, view.width, view.height),
         stats: FrameStats::default(),
     };
@@ -71,7 +81,7 @@ pub fn paint_page(
 struct Cx<'a, P: Painter> {
     doc: &'a Document,
     painter: &'a mut P,
-    text: &'a mut TextEngine,
+    caches: &'a mut RenderCaches,
     viewport: Rect,
     stats: FrameStats,
 }
@@ -164,7 +174,7 @@ impl<P: Painter> Cx<'_, P> {
                 if on_screen < GREEK_BELOW_PX {
                     self.greeked_text(n, text, transform, alpha);
                 } else {
-                    self.text.draw(
+                    self.caches.text.draw(
                         self.painter,
                         text,
                         &self.doc.strings,
@@ -175,15 +185,28 @@ impl<P: Painter> Cx<'_, P> {
                     self.stats.drawn += 1;
                 }
             }
-            (NodeKind::Raster { .. }, Some(g)) => {
-                let brush = BrushSpec::Solid(convert::placeholder(alpha));
-                self.painter
-                    .fill(transform, &g.geom(), Fill::NonZero, &brush, None);
+            (NodeKind::Raster { asset }, Some(g)) => {
+                // A raster layer's pixels fill its box exactly (PSD layers, placed images).
+                if !self.image(*asset, transform, size, ImageScaleMode::Fill, None, alpha) {
+                    let brush = BrushSpec::Solid(convert::placeholder(alpha));
+                    self.painter
+                        .fill(transform, &g.geom(), Fill::NonZero, &brush, None);
+                }
                 self.stats.drawn += 1;
             }
             (_, Some(g)) => {
                 for paint in n.fills.as_slice() {
-                    if let Some((brush, bt)) = convert::brush(paint, size, alpha) {
+                    if !paint.visible {
+                        continue;
+                    }
+                    if let PaintKind::Image { asset, mode, .. } = &paint.kind {
+                        let a = alpha * paint.opacity;
+                        if !self.image(*asset, transform, size, *mode, Some(&g.geom()), a) {
+                            let brush = BrushSpec::Solid(convert::placeholder(a));
+                            self.painter
+                                .fill(transform, &g.geom(), g.rule, &brush, None);
+                        }
+                    } else if let Some((brush, bt)) = convert::brush(paint, size, alpha) {
                         self.painter.fill(transform, &g.geom(), g.rule, &brush, bt);
                     }
                 }
@@ -193,6 +216,56 @@ impl<P: Painter> Cx<'_, P> {
             }
             _ => {}
         }
+    }
+
+    /// Draws an image into the node box (`size`, local units). `Fill` covers the box (cropping,
+    /// clipped to `clip`), `Fit` fits inside it; crop/tile are drawn as fill for now.
+    /// Returns false when the image is unavailable, so the caller can draw a placeholder.
+    fn image(
+        &mut self,
+        asset: ude_core::AssetId,
+        transform: Affine,
+        size: (f64, f64),
+        mode: ImageScaleMode,
+        clip: Option<&Geom<'_>>,
+        alpha: f32,
+    ) -> bool {
+        let src = match self.doc.assets.get(asset).map(|e| e.kind) {
+            Some(ude_core::AssetKind::Image { width, height }) if width > 0 && height > 0 => {
+                (width, height)
+            }
+            _ => return false,
+        };
+        let device = transform.transform_rect_bbox(Rect::new(0.0, 0.0, size.0, size.1));
+        let needed = (device.width(), device.height());
+        let Some(img) = self.caches.images.get(&self.doc.assets, asset, src, needed) else {
+            return false;
+        };
+        let (sw, sh) = (f64::from(src.0), f64::from(src.1));
+        let scale = match mode {
+            ImageScaleMode::Fit => (size.0 / sw).min(size.1 / sh),
+            _ => (size.0 / sw).max(size.1 / sh),
+        };
+        // Centre the scaled image in the box, then map decoded pixels to source pixels.
+        let offset = ((size.0 - sw * scale) / 2.0, (size.1 - sh * scale) / 2.0);
+        let t = transform
+            * Affine::translate(offset)
+            * Affine::scale(scale)
+            * Affine::scale_non_uniform(sw / f64::from(img.width), sh / f64::from(img.height));
+        let clipped = clip.is_some() && mode != ImageScaleMode::Fit;
+        if let (true, Some(c)) = (clipped, clip) {
+            self.painter.push_layer(
+                transform,
+                c,
+                BlendMode::from(vello::peniko::Mix::Normal),
+                1.0,
+            );
+        }
+        self.painter.image(t, &img, alpha);
+        if clipped {
+            self.painter.pop_layer();
+        }
+        true
     }
 
     fn strokes(&mut self, n: &Node, transform: Affine, own: &Shape, alpha: f32) {
@@ -438,7 +511,7 @@ mod tests {
                 cx: &mut cx,
                 resources: &mut resources,
             },
-            &mut TextEngine::default(),
+            &mut RenderCaches::default(),
         );
         let mut pixmap = vello_cpu::Pixmap::new(w, h);
         cx.flush();
@@ -559,6 +632,47 @@ mod tests {
         let inked = px.chunks_exact(4).filter(|p| p[3] > 128).count();
         assert!(inked > 50, "glyph pixels drawn: {inked}");
         assert_eq!(stats.drawn, 1);
+    }
+
+    #[test]
+    fn raster_layer_draws_decoded_pixels() {
+        use ude_core::assets::{AssetEntry, AssetKind, AssetSource, Codec, ContentHash};
+        let img = image::RgbaImage::from_pixel(64, 32, image::Rgba([0, 200, 0, 255]));
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let mut doc = Document::new();
+        let asset = doc.assets.insert(AssetEntry {
+            hash: ContentHash([9; 32]),
+            kind: AssetKind::Image {
+                width: 64,
+                height: 32,
+            },
+            source: AssetSource::Memory {
+                bytes: png.into(),
+                codec: Codec::Png,
+            },
+        });
+        let root = doc.root();
+        let page = doc
+            .build_child(root, Node::new(NodeKind::Page, Symbol::EMPTY))
+            .unwrap();
+        doc.build_child(
+            page,
+            Node::new(NodeKind::Raster { asset }, Symbol::EMPTY).with_size(32.0, 16.0),
+        )
+        .unwrap();
+        let (px, _) = render_cpu(&doc, page, 40, 20);
+        assert_eq!(
+            pixel(&px, 40, 16, 8),
+            [0, 200, 0, 255],
+            "image pixels, not the placeholder"
+        );
+        assert_eq!(
+            pixel(&px, 40, 36, 18),
+            [0, 0, 0, 0],
+            "outside the layer box"
+        );
     }
 
     #[test]

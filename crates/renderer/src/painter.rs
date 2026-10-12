@@ -2,8 +2,12 @@
 //! (`vello_cpu::RenderContext`) backends implement it, so the document traversal is
 //! written once and both backends render the same thing.
 
+use std::sync::Arc;
 use vello::kurbo::{Affine, BezPath, Ellipse, Rect, RoundedRect, Shape, Stroke};
-use vello::peniko::{BlendMode, Color, Fill, FontData, Gradient};
+
+use vello::peniko::{BlendMode, Color, Fill, FontData, Gradient, ImageBrush, ImageSampler};
+
+use crate::images::DecodedImage;
 
 /// Geometry in local coordinates. Analytic shapes stay analytic on the GPU path.
 pub enum Geom<'a> {
@@ -52,6 +56,8 @@ pub trait Painter {
     fn shadow(&mut self, transform: Affine, rect: Rect, color: Color, radius: f64, std_dev: f64);
     fn push_layer(&mut self, transform: Affine, clip: &Geom<'_>, blend: BlendMode, alpha: f32);
     fn pop_layer(&mut self);
+    /// Draws `image` with `transform` mapping image pixels to device space.
+    fn image(&mut self, transform: Affine, image: &DecodedImage, alpha: f32);
     /// Positioned glyphs of one font run (`glyphs` relative to `transform`).
     fn glyphs(
         &mut self,
@@ -78,6 +84,20 @@ macro_rules! with_shape {
 }
 
 impl Painter for vello::Scene {
+    fn image(&mut self, transform: Affine, image: &DecodedImage, alpha: f32) {
+        let sampler = ImageSampler {
+            alpha,
+            ..Default::default()
+        };
+        self.draw_image(
+            &ImageBrush {
+                image: image.gpu().clone(),
+                sampler,
+            },
+            transform,
+        );
+    }
+
     fn fill(
         &mut self,
         transform: Affine,
@@ -149,6 +169,24 @@ pub struct CpuPainter<'a> {
 }
 
 impl Painter for CpuPainter<'_> {
+    fn image(&mut self, transform: Affine, image: &DecodedImage, alpha: f32) {
+        self.cx.set_transform(transform);
+        self.cx.set_paint(vello_cpu::Image {
+            image: vello_cpu::ImageSource::Pixmap(Arc::clone(&image.cpu)),
+            sampler: ImageSampler {
+                alpha,
+                ..Default::default()
+            },
+        });
+        self.cx.reset_paint_transform();
+        self.cx.fill_rect(&Rect::new(
+            0.0,
+            0.0,
+            f64::from(image.width),
+            f64::from(image.height),
+        ));
+    }
+
     fn fill(
         &mut self,
         transform: Affine,

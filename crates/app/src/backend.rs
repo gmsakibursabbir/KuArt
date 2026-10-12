@@ -13,7 +13,7 @@ use ude_renderer::vello::wgpu::{self, CurrentSurfaceTexture};
 use ude_renderer::vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 use ude_renderer::vello_cpu::{RasterizerSettings, TargetInit};
 use ude_renderer::{
-    CpuPainter, FrameStats, Overlay, TextEngine, View, paint_overlay, paint_page, vello_cpu,
+    CpuPainter, FrameStats, Overlay, RenderCaches, View, paint_overlay, paint_page, vello_cpu,
 };
 use winit::window::Window;
 
@@ -113,12 +113,12 @@ impl Backend {
         overlay: &Overlay,
         bg: Color,
         ui: Option<&UiFrame<'_>>,
-        text: &mut TextEngine,
+        caches: &mut RenderCaches,
     ) -> Result<FrameResult, String> {
         match self {
             // The GPU path has no egui renderer yet (egui-wgpu targets a different wgpu than vello).
-            Backend::Gpu(g) => g.render(doc, page, view, overlay, bg, text),
-            Backend::Cpu(c) => c.render(doc, page, view, overlay, bg, ui, text),
+            Backend::Gpu(g) => g.render(doc, page, view, overlay, bg, caches),
+            Backend::Cpu(c) => c.render(doc, page, view, overlay, bg, ui, caches),
         }
     }
 }
@@ -161,10 +161,10 @@ impl Gpu {
         view: &View,
         overlay: &Overlay,
         bg: Color,
-        text: &mut TextEngine,
+        caches: &mut RenderCaches,
     ) -> Result<FrameResult, String> {
         self.scene.reset();
-        let stats = paint_page(doc, page, view, &mut self.scene, text);
+        let stats = paint_page(doc, page, view, &mut self.scene, caches);
         paint_overlay(overlay, &mut self.scene);
         let device = &self.context.devices[self.surface.dev_id];
         let (width, height) = (self.surface.config.width, self.surface.config.height);
@@ -245,7 +245,7 @@ impl Cpu {
         overlay: &Overlay,
         bg: Color,
         ui: Option<&UiFrame<'_>>,
-        text: &mut TextEngine,
+        caches: &mut RenderCaches,
     ) -> Result<FrameResult, String> {
         let key = ContentKey {
             bg,
@@ -264,7 +264,7 @@ impl Cpu {
                     cx: &mut self.cx,
                     resources: &mut self.resources,
                 },
-                text,
+                caches,
             );
             self.cx.flush();
             let settings = RasterizerSettings {

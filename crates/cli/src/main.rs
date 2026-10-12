@@ -71,6 +71,13 @@ fn open(path: &Path) -> Result<Document, String> {
             let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             load(&bytes, &Limits::default()).map_err(|e| format!("{}: {e}", path.display()))
         }
+        "png" | "jpg" | "jpeg" | "webp" => {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let name = path
+                .file_name()
+                .map_or_else(|| "image".into(), |n| n.to_string_lossy().into_owned());
+            ude_format_raster::import(bytes, &name).map_err(|e| format!("{}: {e}", path.display()))
+        }
         "svg" => Err("SVG import is not implemented yet (milestone M9)".into()),
         "psd" | "psb" => Err("PSD import is not implemented yet (milestone M10)".into()),
         "fig" => Err("Figma import is not implemented yet (milestone M11)".into()),
