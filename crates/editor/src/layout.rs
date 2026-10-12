@@ -70,7 +70,7 @@ impl Solver<'_> {
         let m = match auto_layout(n) {
             None => own,
             Some(al) => {
-                let al = al.clone();
+                let al = *al;
                 let kids = flow(self.doc, id);
                 let sizes: Vec<(f32, f32)> = kids.iter().map(|&c| self.measure(c)).collect();
                 let horizontal = al.direction != LayoutDirection::Vertical;
@@ -136,7 +136,7 @@ impl Solver<'_> {
     fn arrange(&mut self, id: NodeId, size: (f32, f32)) {
         let doc = self.doc;
         let Some(n) = doc.node(id) else { return };
-        let Some(al) = auto_layout(n).cloned() else {
+        let Some(al) = auto_layout(n).copied() else {
             return;
         };
         let horizontal = al.direction != LayoutDirection::Vertical;
