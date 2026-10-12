@@ -163,7 +163,10 @@ we model.
 Import creates a Frame sized to the image with one Raster child. Export renders through the CPU
 backend (deterministic, no GPU needed) at a chosen scale, with sRGB tagging.
 
-## 8. Native `.design`
+## 8. Native `.krt`
+
+KuArt documents use the `.krt` extension (MIME `application/x-kuart-design`). Files named
+`.design` (the pre-0.1 name) open unchanged; the bytes are the same format.
 
 Implemented in `crates/formats/native` (M1). Format version **0**.
 

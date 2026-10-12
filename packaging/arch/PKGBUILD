@@ -1,0 +1,30 @@
+# Maintainer: Sakibur Rahman Sabbir
+# Binary package from the GitHub release bundle (AUR: kuart-bin).
+# release.yml builds it with SOURCE_URL pointing at the local bundle.
+pkgname=kuart-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Fast, offline design editor (Figma, XD, Photoshop, SVG)"
+arch=('x86_64')
+url="https://github.com/gmsakibursabbir/KuArt"
+license=('MIT' 'Apache-2.0')
+depends=('fontconfig' 'libxkbcommon' 'hicolor-icon-theme')
+optdepends=('vulkan-icd-loader: GPU renderer (--gpu)')
+provides=('kuart')
+conflicts=('kuart')
+source=("${SOURCE_URL:-$url/releases/download/v$pkgver/KuArt-$pkgver-linux-x86_64.tar.gz}")
+sha256sums=('SKIP')
+
+package() {
+  cd "KuArt-$pkgver-linux-x86_64"
+  install -Dm755 design-editor "$pkgdir/usr/bin/design-editor"
+  install -Dm755 design-editor-cli "$pkgdir/usr/bin/design-editor-cli"
+  install -Dm644 io.github.gmsakibursabbir.KuArt.desktop -t "$pkgdir/usr/share/applications/"
+  install -Dm644 io.github.gmsakibursabbir.KuArt.metainfo.xml -t "$pkgdir/usr/share/metainfo/"
+  install -Dm644 io.github.gmsakibursabbir.KuArt.xml -t "$pkgdir/usr/share/mime/packages/"
+  for s in 16 32 48 64 128 256 512; do
+    install -Dm644 "icons/$s/io.github.gmsakibursabbir.KuArt.png" \
+      "$pkgdir/usr/share/icons/hicolor/${s}x${s}/apps/io.github.gmsakibursabbir.KuArt.png"
+  done
+  install -Dm644 LICENSE-MIT LICENSE-APACHE -t "$pkgdir/usr/share/licenses/$pkgname/"
+}

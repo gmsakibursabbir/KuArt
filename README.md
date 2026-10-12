@@ -21,7 +21,7 @@ handles (Shift/Alt modifiers), nudge, delete, and undo/redo. Each drag is one un
 Before that, M2 delivered the canvas: A native window renders documents with a multithreaded CPU renderer by
 default (about 21 MB for a 10k-node document), or on the GPU with `--gpu`. It supports pan/zoom and
 uses zero CPU while idle. Underneath sit the scene graph,
-undo/redo, the native `.design` format, a headless CLI and benchmarks. Editing tools come next (M3+).
+undo/redo, the native `.krt` format, a headless CLI and benchmarks. Editing tools come next (M3+).
 See the [roadmap](docs/roadmap.md) and [perf log](docs/perf-log.md), which explains why the CPU renderer is
 the default for now.
 
@@ -31,7 +31,7 @@ the default for now.
 |---|---|
 | [Architecture](docs/architecture.md) | system, modules, data flow, tech choices |
 | [Universal model](docs/universal-model.md) | the internal scene graph |
-| [Format strategy](docs/format-strategy.md) | Figma / XD / PSD / SVG / PDF / `.design` |
+| [Format strategy](docs/format-strategy.md) | Figma / XD / PSD / SVG / PDF / `.krt` |
 | [Memory strategy](docs/memory-strategy.md) | RAM, VRAM, CPU, disk I/O |
 | [Rendering strategy](docs/rendering-strategy.md) | GPU/CPU, caching, tiling, dirty regions |
 | [Dev Mode](docs/dev-mode.md) | inspector and code-generation pipeline |
@@ -52,7 +52,7 @@ cargo test --workspace
 cargo run --release -p ude-app -- --stats
 ```
 
-With no file argument, the app opens a 10k-node demo. Pass a `.design` file to open it. The CPU renderer is the default (lowest memory); `--gpu` opts into
+With no file argument, the app opens a 10k-node demo. Pass a `.krt` file to open it. The CPU renderer is the default (lowest memory); `--gpu` opts into
 the GPU renderer. Controls: wheel to pan, Ctrl+wheel to zoom, Space+drag or middle-drag to
 pan, Shift+1 to fit, Ctrl+0 for 100%, F3 for stats.
 
@@ -61,5 +61,5 @@ cargo run --release -p ude-bench
 ```
 
 ```bash
-cargo run --release -p ude-cli -- generate demo.design --nodes 10000
+cargo run --release -p ude-cli -- generate demo.krt --nodes 10000
 ```

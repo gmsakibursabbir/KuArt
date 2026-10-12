@@ -9,11 +9,11 @@ publish = false
 
 [dependencies]
 ude-core = { path = "../core" }
-ude-editor = { version = "0.0.1", path = "../editor" }
+ude-editor = { path = "../editor" }
 ude-format-native = { path = "../formats/native" }
-ude-renderer = { version = "0.0.1", path = "../renderer" }
-ude-spatial = { version = "0.0.1", path = "../spatial" }
-ude-ui = { version = "0.0.1", path = "../ui" }
+ude-renderer = { path = "../renderer" }
+ude-spatial = { path = "../spatial" }
+ude-ui = { path = "../ui" }
 ude-diagnostics = { path = "../diagnostics" }
 
 [lints]

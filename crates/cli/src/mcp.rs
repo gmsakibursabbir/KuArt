@@ -98,7 +98,8 @@ impl Session {
                 let path = PathBuf::from(req_str(a, "path")?);
                 self.doc = crate::open(&path)?;
                 self.history = History::default();
-                self.path = (crate::extension(&path) == "design").then_some(path);
+                self.path = ude_format_native::is_native_extension(&crate::extension(&path))
+                    .then_some(path);
                 Ok(vec![text(self.summary())])
             }
             "new_document" => {
@@ -161,10 +162,10 @@ impl Session {
                     None => self
                         .path
                         .clone()
-                        .ok_or("no path: pass \"path\" (a .design file)")?,
+                        .ok_or("no path: pass \"path\" (a .krt file)")?,
                 };
-                if crate::extension(&path) != "design" {
-                    return Err("save_document writes .design files; use export for PNG/SVG".into());
+                if !ude_format_native::is_native_extension(&crate::extension(&path)) {
+                    return Err("save_document writes .krt files; use export for PNG/SVG".into());
                 }
                 ude_format_native::save_to_path(&self.doc, &path).map_err(|e| e.to_string())?;
                 self.path = Some(path.clone());
@@ -628,7 +629,7 @@ fn tool_list() -> Value {
         ),
         tool(
             "open_document",
-            "Open a .design, .svg, .png, .jpg or .webp file (replaces the open document).",
+            "Open a .krt, Figma (.fig/.jam/.deck/…), .xd, .psd, .svg or image file (replaces the open document).",
             json!({"path": {"type": "string"}}),
             &["path"]
         ),
@@ -672,7 +673,7 @@ fn tool_list() -> Value {
         tool("redo", "Redo the last undone edit.", json!({}), &[]),
         tool(
             "save_document",
-            "Save as .design (default: the path it was opened from).",
+            "Save as .krt (default: the path it was opened from).",
             json!({"path": {"type": "string"}}),
             &[]
         ),

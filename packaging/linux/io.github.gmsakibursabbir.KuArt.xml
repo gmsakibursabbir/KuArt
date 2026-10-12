@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- shared-mime-info: KuArt's own format plus the design formats it opens. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-kuart-design">
+    <comment>KuArt document</comment>
+    <glob pattern="*.krt"/>
+    <glob pattern="*.design"/>
+  </mime-type>
+  <mime-type type="application/x-figma">
+    <comment>Figma design</comment>
+    <glob pattern="*.fig"/>
+    <glob pattern="*.jam"/>
+    <glob pattern="*.deck"/>
+    <glob pattern="*.buzz"/>
+    <glob pattern="*.site"/>
+    <glob pattern="*.make"/>
+  </mime-type>
+  <mime-type type="application/x-adobe-xd">
+    <comment>Adobe XD design</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.xd"/>
+  </mime-type>
+</mime-info>

@@ -19,18 +19,18 @@ macro_rules! out {
 }
 
 const USAGE: &str = "\
-design-editor-cli: headless tools for .design documents
+design-editor-cli: headless tools for KuArt (.krt) documents
 
 USAGE:
     design-editor-cli inspect <file>
     design-editor-cli convert <input> <output>
-    design-editor-cli generate <output.design> [--nodes N] [--seed S]
+    design-editor-cli generate <output.krt> [--nodes N] [--seed S]
     design-editor-cli code <input> <html|css|tailwind|react|vue|tokens> [output]
     design-editor-cli mcp              (MCP server on stdio, for AI agents)
     design-editor-cli --version
 
-Input: .design, .fig, .xd, .psd/.psb, .svg and images (.png .jpg .webp).
-Output: .design, .png or .svg (first page).";
+Input: .krt (and legacy .design), .fig/.jam/.deck/.buzz/.site/.make, .xd, .psd/.psb, .svg and images (.png .jpg .webp).
+Output: .krt, .png or .svg (first page).";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -75,7 +75,7 @@ fn extension(path: &Path) -> String {
 
 fn open(path: &Path) -> Result<Document, String> {
     match extension(path).as_str() {
-        "design" => {
+        "krt" | "design" => {
             let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             load(&bytes, &Limits::default()).map_err(|e| format!("{}: {e}", path.display()))
         }
@@ -110,7 +110,7 @@ fn open(path: &Path) -> Result<Document, String> {
             }
             Ok(im.doc)
         }
-        "fig" => {
+        "fig" | "jam" | "deck" | "buzz" | "site" | "make" => {
             let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             let name = path
                 .file_name()
@@ -140,7 +140,7 @@ fn open(path: &Path) -> Result<Document, String> {
 
 fn cmd_inspect(path: &Path) -> CliResult {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    if extension(path) == "design" {
+    if ude_format_native::is_native_extension(&extension(path)) {
         let table = inspect(&bytes).map_err(|e| e.to_string())?;
         out!(
             "{}  ({} bytes, {} chunks)",
@@ -230,7 +230,7 @@ fn kind_name(k: &NodeKind) -> &'static str {
 fn cmd_convert(input: &Path, output: &Path) -> CliResult {
     let doc = open(input)?;
     match extension(output).as_str() {
-        "design" => save_to_path(&doc, output).map_err(|e| e.to_string())?,
+        "krt" | "design" => save_to_path(&doc, output).map_err(|e| e.to_string())?,
         "png" | "svg" => {
             // Exports the first page.
             let page = *doc
@@ -283,8 +283,8 @@ fn cmd_generate(args: &[String]) -> CliResult {
         }
     }
     let out = out.ok_or("missing output path")?;
-    if extension(&out) != "design" {
-        return Err("output must be a .design file".into());
+    if !ude_format_native::is_native_extension(&extension(&out)) {
+        return Err("output must be a .krt file".into());
     }
     let doc = ude_bench::generate(ude_bench::SynthSpec { nodes, seed });
     save_to_path(&doc, &out).map_err(|e| e.to_string())?;

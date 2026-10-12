@@ -5,6 +5,24 @@ use std::path::PathBuf;
 
 const SOURCE: &str = "../../assets/icon.png";
 const WINDOW_ICON_SIZE: u32 = 64;
+/// Windows application manifest: per-monitor-v2 DPI, long paths, UTF-8 code page, Windows 10+.
+const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>
+"#;
 
 fn main() {
     println!("cargo:rerun-if-changed={SOURCE}");
@@ -39,6 +57,7 @@ fn main() {
         res.set_icon(ico_path.to_str().expect("utf-8 path"));
         res.set("ProductName", "KuArt");
         res.set("FileDescription", "KuArt design editor");
+        res.set_manifest(MANIFEST);
         res.compile().expect("embed Windows resources");
     }
 }

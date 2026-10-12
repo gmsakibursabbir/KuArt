@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=KuArt
+GenericName=Design Editor
+Comment=Fast, offline design editor for Figma, XD, Photoshop and SVG files
+Exec=design-editor %f
+Icon=io.github.gmsakibursabbir.KuArt
+Terminal=false
+Categories=Graphics;VectorGraphics;RasterGraphics;Design;
+Keywords=design;ui;ux;figma;xd;psd;svg;vector;
+MimeType=application/x-kuart-design;application/x-figma;application/x-adobe-xd;image/vnd.adobe.photoshop;image/svg+xml;
+StartupWMClass=design-editor

@@ -3163,7 +3163,7 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
 name = "ude-app"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "bytemuck",
  "egui-winit",
@@ -3193,7 +3193,7 @@ dependencies = [
 
 [[package]]
 name = "ude-bench"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "ude-core",
  "ude-diagnostics",
@@ -3206,7 +3206,7 @@ dependencies = [
 
 [[package]]
 name = "ude-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde_json",
  "ude-bench",
@@ -3225,7 +3225,7 @@ dependencies = [
 
 [[package]]
 name = "ude-codegen"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "ude-core",
  "ude-format-svg",
@@ -3233,18 +3233,18 @@ dependencies = [
 
 [[package]]
 name = "ude-core"
-version = "0.0.1"
+version = "0.1.0"
 
 [[package]]
 name = "ude-diagnostics"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "memory-stats",
 ]
 
 [[package]]
 name = "ude-editor"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "ude-core",
  "ude-spatial",
@@ -3252,7 +3252,7 @@ dependencies = [
 
 [[package]]
 name = "ude-format-fig"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "flate2",
@@ -3264,7 +3264,7 @@ dependencies = [
 
 [[package]]
 name = "ude-format-native"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "ude-core",
@@ -3273,7 +3273,7 @@ dependencies = [
 
 [[package]]
 name = "ude-format-psd"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "flate2",
@@ -3283,7 +3283,7 @@ dependencies = [
 
 [[package]]
 name = "ude-format-raster"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "image",
@@ -3292,14 +3292,14 @@ dependencies = [
 
 [[package]]
 name = "ude-format-svg"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "ude-core",
 ]
 
 [[package]]
 name = "ude-format-svg-import"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "ude-core",
@@ -3308,7 +3308,7 @@ dependencies = [
 
 [[package]]
 name = "ude-format-xd"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "image",
@@ -3320,14 +3320,14 @@ dependencies = [
 
 [[package]]
 name = "ude-format-zip"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "flate2",
 ]
 
 [[package]]
 name = "ude-renderer"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "image",
  "parley",
@@ -3339,7 +3339,7 @@ dependencies = [
 
 [[package]]
 name = "ude-spatial"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "kurbo",
  "rstar",
@@ -3348,7 +3348,7 @@ dependencies = [
 
 [[package]]
 name = "ude-ui"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "egui",
  "ude-core",

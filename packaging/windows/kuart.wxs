@@ -1,0 +1,52 @@
+<!-- WiX v4+ per-user installer (no admin rights): Start menu shortcut, file associations,
+     uninstall entry. Built by .github/workflows/release.yml:
+     wix build packaging/windows/kuart.wxs -d Version=X.Y.Z -d BinDir=<dir> -o KuArt.msi -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="KuArt" Manufacturer="KuArt" Version="$(Version)" Scope="perUser"
+           UpgradeCode="5E3B1C2A-7D4F-4F6B-9A8E-2C1D0B9A7F31" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of KuArt is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="KuArtIcon" SourceFile="$(BinDir)\design-editor.exe" />
+    <Property Id="ARPPRODUCTICON" Value="KuArtIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/gmsakibursabbir/KuArt" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="KuArt" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <ComponentGroup Id="Files" Directory="INSTALLFOLDER">
+      <Component Id="App" Guid="*">
+        <File Id="AppExe" Source="$(BinDir)\design-editor.exe" />
+        <Shortcut Id="StartMenu" Directory="ProgramMenuFolder" Name="KuArt"
+                  Description="KuArt design editor" WorkingDirectory="INSTALLFOLDER" Advertise="no"
+                  Target="[INSTALLFOLDER]design-editor.exe" Icon="KuArtIcon" />
+        <RegistryValue Root="HKCU" Key="Software\KuArt" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <ProgId Id="KuArt.Design" Description="KuArt design" Icon="AppExe" IconIndex="0">
+          <Extension Id="krt" ContentType="application/x-kuart-design">
+            <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
+          </Extension>
+          <Extension Id="design" ContentType="application/x-kuart-design">
+            <Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+        <ProgId Id="KuArt.Import" Description="Design file (opens in KuArt)" Icon="AppExe" IconIndex="0">
+          <Extension Id="fig"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="xd"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="psd"><Verb Id="open" Command="Open" TargetFile="AppExe" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+      </Component>
+      <Component Id="Cli" Guid="*">
+        <File Id="CliExe" Source="$(BinDir)\design-editor-cli.exe" />
+        <RegistryValue Root="HKCU" Key="Software\KuArt" Name="Cli" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="KuArt">
+      <ComponentGroupRef Id="Files" />
+    </Feature>
+  </Package>
+</Wix>

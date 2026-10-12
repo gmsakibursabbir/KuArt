@@ -50,7 +50,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
-const USAGE: &str = "usage: design-editor [file.design] [--gpu | --cpu] [--stats] [--demo NODES]";
+const USAGE: &str = "usage: design-editor [file.krt] [--gpu | --cpu] [--stats] [--demo NODES]";
 
 struct Options {
     file: Option<PathBuf>,

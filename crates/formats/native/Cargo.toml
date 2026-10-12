@@ -1,6 +1,6 @@
 [package]
 name = "ude-format-native"
-description = "Native .design file format: chunked, versioned, deterministic"
+description = "Native .krt file format: chunked, versioned, deterministic"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

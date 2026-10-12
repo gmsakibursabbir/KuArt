@@ -1,0 +1,231 @@
+# Release packaging (docs/distribution.md §3–6).
+# Tag vX.Y.Z (matching Cargo.toml) → build, package, checksums → draft GitHub Release.
+# Windows: MSI, setup exe, standalone exe, portable zip. Linux: AppImage, deb, rpm, Arch
+# (.pkg.tar.zst), bundle tarball. CLI archives for both.
+# Run manually (workflow_dispatch) to build every package as workflow artifacts only.
+#
+# Optional secrets: WINDOWS_CERT_BASE64 + WINDOWS_CERT_PASSWORD (Authenticode .pfx),
+# GPG_PRIVATE_KEY (signs SHA256SUMS).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Version
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$VERSION" ]]; then
+            echo "tag ${GITHUB_REF#refs/tags/} does not match Cargo.toml version $VERSION"; exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Build (static CRT)
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked -p ude-app -p ude-cli
+      - name: Size budget (GUI ≤ 25 MB, CLI ≤ 12 MB)
+        shell: bash
+        run: |
+          check() { s=$(stat -c %s "$1"); echo "$1: $((s / 1048576)) MB"; [ "$s" -le "$2" ] || { echo "::error::$1 is over budget"; exit 1; }; }
+          check target/release/design-editor.exe $((25 * 1048576))
+          check target/release/design-editor-cli.exe $((12 * 1048576))
+      - name: Smoke test CLI
+        shell: bash
+        run: |
+          target/release/design-editor-cli.exe --version
+          target/release/design-editor-cli.exe generate smoke.krt --nodes 1000
+          target/release/design-editor-cli.exe convert smoke.krt smoke.png
+          target/release/design-editor-cli.exe code smoke.krt html > smoke.html
+      - name: Sign executables
+        if: env.WINDOWS_CERT_BASE64 != ''
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          & $signtool.FullName sign /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 target/release/design-editor.exe target/release/design-editor-cli.exe
+      - name: Portable zip and CLI zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist, portable | Out-Null
+          Copy-Item target/release/design-editor.exe, target/release/design-editor-cli.exe, README.md, LICENSE-MIT, LICENSE-APACHE portable/
+          Compress-Archive -Path portable/* -DestinationPath "dist/KuArt-$env:VERSION-windows-x64-portable.zip"
+          Compress-Archive -Path target/release/design-editor-cli.exe, LICENSE-MIT, LICENSE-APACHE -DestinationPath "dist/design-editor-cli-$env:VERSION-windows-x64.zip"
+      - name: MSI (WiX)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix build packaging/windows/kuart.wxs -arch x64 -d Version=$env:VERSION -d BinDir=target/release -o "dist/KuArt-$env:VERSION-x64.msi"
+          if ($env:WINDOWS_CERT_BASE64) {
+            $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+            & $signtool.FullName sign /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 "dist/KuArt-$env:VERSION-x64.msi"
+          }
+      - name: Setup exe (Inno Setup) and standalone exe
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+            $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
+          }
+          iscc /Qp "/DVersion=$env:VERSION" "/DBinDir=$PWD	arget
+elease" "/DOutDir=$PWD\dist" packaging\windows\kuart.iss
+          Copy-Item target/release/design-editor.exe "dist/KuArt-$env:VERSION-x64.exe"
+          if ($env:WINDOWS_CERT_BASE64) {
+            $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kitsin\*d\signtool.exe" | Select-Object -Last 1
+            & $signtool.FullName sign /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 "dist/KuArt-$env:VERSION-x64-setup.exe"
+          }
+      - name: Remove certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Force -ErrorAction SilentlyContinue cert.pfx
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+      - name: Version
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$VERSION" ]]; then
+            echo "tag ${GITHUB_REF#refs/tags/} does not match Cargo.toml version $VERSION"; exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Build against glibc 2.31 (Ubuntu 20.04, Debian 11, RHEL 9)
+        run: |
+          pip install ziglang cargo-zigbuild
+          cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu.2.31 -p ude-app -p ude-cli
+      - name: Size budget (GUI ≤ 25 MB, CLI ≤ 12 MB)
+        run: |
+          B=target/x86_64-unknown-linux-gnu/release
+          check() { s=$(stat -c %s "$1"); echo "$1: $((s / 1048576)) MB"; [ "$s" -le "$2" ] || { echo "::error::$1 is over budget"; exit 1; }; }
+          check $B/design-editor $((25 * 1048576))
+          check $B/design-editor-cli $((12 * 1048576))
+      - name: Smoke test CLI
+        run: |
+          B=target/x86_64-unknown-linux-gnu/release
+          $B/design-editor-cli --version
+          $B/design-editor-cli generate smoke.krt --nodes 1000
+          $B/design-editor-cli convert smoke.krt smoke.png
+          $B/design-editor-cli code smoke.krt react > smoke.jsx
+          objdump -T $B/design-editor | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+      - name: Icons
+        run: |
+          for s in 16 32 48 64 128 256 512; do
+            mkdir -p packaging/linux/icons/$s
+            convert assets/icon.png -resize ${s}x${s} packaging/linux/icons/$s/io.github.gmsakibursabbir.KuArt.png
+          done
+      - name: deb and rpm
+        run: |
+          mkdir -p dist
+          cargo deb -p ude-app --no-build --target x86_64-unknown-linux-gnu -o dist/
+          cargo generate-rpm -p crates/app --target x86_64-unknown-linux-gnu -o dist/
+      - name: AppImage
+        run: |
+          B=target/x86_64-unknown-linux-gnu/release
+          A=KuArt.AppDir
+          install -Dm755 $B/design-editor $A/usr/bin/design-editor
+          install -Dm755 $B/design-editor-cli $A/usr/bin/design-editor-cli
+          install -Dm644 packaging/linux/io.github.gmsakibursabbir.KuArt.desktop $A/io.github.gmsakibursabbir.KuArt.desktop
+          install -Dm644 packaging/linux/io.github.gmsakibursabbir.KuArt.metainfo.xml $A/usr/share/metainfo/io.github.gmsakibursabbir.KuArt.appdata.xml
+          install -Dm644 packaging/linux/icons/256/io.github.gmsakibursabbir.KuArt.png $A/io.github.gmsakibursabbir.KuArt.png
+          ln -s usr/bin/design-editor $A/AppRun
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 ./appimagetool $A "dist/KuArt-$VERSION-x86_64.AppImage"
+      - name: Linux bundle (binaries + desktop files + icons; used by the Arch package)
+        run: |
+          B=target/x86_64-unknown-linux-gnu/release
+          D="KuArt-$VERSION-linux-x86_64"
+          mkdir -p "$D"
+          cp $B/design-editor $B/design-editor-cli LICENSE-MIT LICENSE-APACHE "$D/"
+          cp packaging/linux/io.github.gmsakibursabbir.KuArt.{desktop,metainfo.xml,xml} "$D/"
+          cp -r packaging/linux/icons "$D/"
+          tar -czf "dist/$D.tar.gz" "$D"
+      - name: CLI archive
+        run: |
+          B=target/x86_64-unknown-linux-gnu/release
+          tar -czf "dist/design-editor-cli-$VERSION-linux-x86_64.tar.gz" -C $B design-editor-cli -C "$GITHUB_WORKSPACE" LICENSE-MIT LICENSE-APACHE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+
+  arch:
+    needs: linux
+    runs-on: ubuntu-22.04
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: linux
+      - name: Build kuart-bin package
+        run: |
+          pacman -Syu --noconfirm --needed base-devel
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          useradd -m builder
+          mkdir -p /home/builder/pkg dist
+          cp packaging/arch/PKGBUILD /home/builder/pkg/
+          cp "linux/KuArt-$VERSION-linux-x86_64.tar.gz" /home/builder/pkg/
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" /home/builder/pkg/PKGBUILD
+          chown -R builder /home/builder/pkg
+          su builder -c "cd ~/pkg && SOURCE_URL=KuArt-$VERSION-linux-x86_64.tar.gz makepkg --nodeps --noconfirm"
+          cp /home/builder/pkg/*.pkg.tar.zst dist/
+          tar -tf dist/*.pkg.tar.zst | grep -E 'usr/bin/design-editor$'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: dist/*
+
+  release:
+    needs: [windows, linux, arch]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+            gpg --batch --armor --detach-sign SHA256SUMS
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist/*

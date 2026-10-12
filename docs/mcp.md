@@ -29,7 +29,7 @@ Claude Desktop (`claude_desktop_config.json`):
 
 | Tool | Purpose |
 |---|---|
-| `open_document` | Open .design, .svg, .png, .jpg, .webp |
+| `open_document` | Open .krt, Figma files, .xd, .psd, .svg, images |
 | `new_document` | New document; `width`/`height` add an artboard |
 | `get_tree` | Layer tree with ids, kinds, names, positions, sizes |
 | `get_node` | All properties of one node (JSON) |
@@ -39,7 +39,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | `render_preview` | PNG image of a node, plus missing-font names |
 | `generate_code` | html, css, tailwind, react, vue or tokens (see `dev-mode.md`) |
 | `export`, `export_svg_code` | PNG/SVG files or SVG markup |
-| `save_document` | Save as .design (open it in KuArt) |
+| `save_document` | Save as .krt (open it in KuArt) |
 
 Node ids are the numbers shown by `get_tree`. Coordinates are pixels relative to the parent.
 Colours are `#RGB`, `#RRGGBB` or `#RRGGBBAA`.
@@ -47,5 +47,5 @@ Colours are `#RGB`, `#RRGGBB` or `#RRGGBBAA`.
 The same code generator is available without an agent:
 
 ```bash
-design-editor-cli code design.design react ProductCard.jsx
+design-editor-cli code design.krt react ProductCard.jsx
 ```

@@ -391,6 +391,21 @@ fn imports_zip_container_with_zstd_message() {
 }
 
 #[test]
+fn imports_other_figma_products() {
+    let mut f = fig(false);
+    f[..8].copy_from_slice(b"fig-jam.");
+    let im = import(&f, "board.jam").unwrap();
+    assert_eq!(im.doc.children(im.doc.root()).len(), 1);
+    assert!(
+        im.warnings.iter().any(|w| w.starts_with("FigJam file")),
+        "{:?}",
+        im.warnings
+    );
+    f[..8].copy_from_slice(b"fig-deck");
+    assert!(import(&f, "talk.deck").unwrap().warnings[0].starts_with("Figma Slides"));
+}
+
+#[test]
 fn rejects_bad_input() {
     assert!(import(b"hello", "x").is_err());
     let mut f = fig(false);

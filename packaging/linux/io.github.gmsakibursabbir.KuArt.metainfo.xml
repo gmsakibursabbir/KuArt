@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.gmsakibursabbir.KuArt</id>
+  <name>KuArt</name>
+  <summary>Fast, offline design editor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <developer id="io.github.gmsakibursabbir">
+    <name>Sakibur Rahman Sabbir</name>
+  </developer>
+  <description>
+    <p>
+      KuArt opens, edits and exports Figma, Adobe XD, Photoshop and SVG designs in a native app
+      that starts in a fraction of a second and uses little memory. It works fully offline.
+    </p>
+    <ul>
+      <li>Import .fig, .xd, .psd/.psb, .svg and images; save as .krt</li>
+      <li>Shapes, text, images, layers, undo and redo</li>
+      <li>Export PNG and SVG; generate HTML, CSS, Tailwind, React and Vue code</li>
+      <li>MCP server so AI agents can create and edit designs</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.gmsakibursabbir.KuArt.desktop</launchable>
+  <url type="homepage">https://github.com/gmsakibursabbir/KuArt</url>
+  <url type="bugtracker">https://github.com/gmsakibursabbir/KuArt/issues</url>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>design-editor</binary>
+    <binary>design-editor-cli</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-10-12"/>
+  </releases>
+</component>

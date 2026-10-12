@@ -1,4 +1,5 @@
-//! Native `.design` format: chunked, versioned, deterministic, zstd-compressed,
+//! Native `.krt` format (`.design` is the legacy extension, still opened): chunked,
+//! versioned, deterministic, zstd-compressed,
 //! content-hashed. See `docs/format-strategy.md` §8.
 //!
 //! Chunk layout (in file order):
@@ -7,6 +8,14 @@
 mod container;
 mod model;
 pub mod wire;
+
+/// Extension for new KuArt documents.
+pub const EXTENSION: &str = "krt";
+
+/// Is `ext` (lowercase, without the dot) a native document? `.design` is the legacy name.
+pub fn is_native_extension(ext: &str) -> bool {
+    matches!(ext, "krt" | "design")
+}
 
 use std::fmt;
 use std::path::Path;
@@ -69,7 +78,7 @@ impl fmt::Display for NativeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NativeError::Io(e) => write!(f, "I/O error: {e}"),
-            NativeError::BadMagic => write!(f, "not a .design file"),
+            NativeError::BadMagic => write!(f, "not a KuArt (.krt) file"),
             NativeError::UnsupportedVersion(v) => {
                 write!(f, "file format version {v} is newer than this app supports")
             }

@@ -15,10 +15,10 @@ ude-core = { path = "../core" }
 ude-format-native = { path = "../formats/native" }
 # Synthetic documents for `generate`.
 ude-bench = { path = "../benchmarks" }
-ude-format-raster = { version = "0.0.1", path = "../formats/raster" }
-ude-renderer = { version = "0.0.1", path = "../renderer" }
-ude-format-svg = { version = "0.0.1", path = "../formats/svg" }
-ude-format-svg-import = { version = "0.0.1", path = "../formats/svg-import" }
+ude-format-raster = { path = "../formats/raster" }
+ude-renderer = { path = "../renderer" }
+ude-format-svg = { path = "../formats/svg" }
+ude-format-svg-import = { path = "../formats/svg-import" }
 ude-editor = { path = "../editor" }
 serde_json = "1"
 ude-codegen = { path = "../codegen" }

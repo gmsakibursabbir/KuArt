@@ -1,4 +1,5 @@
-//! Figma import (`docs/format-strategy.md` §2). A `.fig` file ("Save local copy") is a ZIP
+//! Figma import (`docs/format-strategy.md` §2): `.fig` and the other Figma products' files
+//! (`.jam`, `.deck`, `.buzz`, `.site`, `.make`), which share the format. A `.fig` file ("Save local copy") is a ZIP
 //! holding `canvas.fig` and `images/<hash>`; older files are a bare `canvas.fig`. That file is
 //! `fig-kiwi` + version + length-prefixed chunks: a Kiwi schema and a "Message" whose
 //! `nodeChanges` list every node with its parent and position, and whose `blobs` hold vector
@@ -51,8 +52,14 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
     let canvas: Vec<u8>;
     let canvas_bytes: &[u8] = if ude_format_zip::Zip::is_zip(bytes) {
         let z = ude_format_zip::Zip::open(bytes)?;
+        let entry = z
+            .names()
+            .find(|n| *n == "canvas.fig")
+            .or_else(|| z.names().find(|n| n.ends_with(".fig") && !n.contains('/')))
+            .ok_or("the ZIP has no canvas.fig: not a Figma file")?
+            .to_owned();
         canvas = z
-            .read("canvas.fig", MAX_CHUNK)?
+            .read(&entry, MAX_CHUNK)?
             .ok_or("the ZIP has no canvas.fig: not a Figma file")?;
         let names: Vec<String> = z
             .names()
@@ -70,10 +77,13 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
     };
     let mut warnings = Warnings::default();
     let header = canvas_bytes.get(..8).ok_or("not a Figma file")?;
-    match header {
-        b"fig-kiwi" => {}
-        b"fig-jam." => warnings.figjam = true,
-        _ => return Err("not a Figma file (expected a fig-kiwi header)".into()),
+    // Every Figma product (Design, FigJam, Slides, Buzz, Sites, Make) uses this container;
+    // the header names the product: "fig-kiwi", "fig-jam.", "fig-deck", …
+    if !header.starts_with(b"fig-") {
+        return Err("not a Figma file (expected a fig-kiwi header)".into());
+    }
+    if header != b"fig-kiwi" {
+        warnings.product = Some(product_name(header));
     }
     let mut p = 12; // header + version
     let mut chunks = Vec::new();
@@ -156,6 +166,17 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
     Ok(Imported { doc, warnings })
 }
 
+fn product_name(header: &[u8]) -> &'static str {
+    match header {
+        b"fig-jam." => "FigJam",
+        b"fig-deck" => "Figma Slides",
+        b"fig-buzz" => "Figma Buzz",
+        b"fig-site" => "Figma Sites",
+        b"fig-make" => "Figma Make",
+        _ => "Figma",
+    }
+}
+
 fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     if data.starts_with(&[0x28, 0xB5, 0x2F, 0xFD]) {
@@ -182,7 +203,8 @@ fn guid(v: Option<&Value>) -> Option<Guid> {
 
 #[derive(Default)]
 struct Warnings {
-    figjam: bool,
+    /// Non-Design product (FigJam, Slides, …), named for the warning.
+    product: Option<&'static str>,
     overrides: usize,
     missing_images: usize,
     unknown: HashMap<String, usize>,
@@ -192,8 +214,10 @@ struct Warnings {
 impl Warnings {
     fn finish(self) -> Vec<String> {
         let mut w = Vec::new();
-        if self.figjam {
-            w.push("FigJam board: only shapes, text and images are imported".into());
+        if let Some(p) = self.product {
+            w.push(format!(
+                "{p} file: shapes, text, images and frames are imported; {p}-only objects become frames"
+            ));
         }
         if self.overrides > 0 {
             w.push(format!(
@@ -271,7 +295,8 @@ impl<'a, 's> Builder<'a, 's> {
         let name = self.doc.strings.intern(nc.str("name").unwrap_or(ty));
         let mut node = match ty {
             "FRAME" | "SECTION" | "SYMBOL" | "INSTANCE" | "STICKY" | "SHAPE_WITH_TEXT"
-            | "TABLE" => {
+            | "TABLE" | "SLIDE" | "SLIDE_ROW" | "SLIDE_GRID" | "CODE_BLOCK" | "WIDGET"
+            | "STAMP" | "MEDIA" | "RESPONSIVE_SET" | "WEBPAGE" => {
                 let kind = match ty {
                     "SYMBOL" => NodeKind::Component(Box::new(ComponentInfo {
                         key: self
@@ -301,7 +326,8 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(t) => Node::new(NodeKind::Text(Box::new(t)), name),
                 None => return Ok(()),
             },
-            "VECTOR" | "STAR" | "REGULAR_POLYGON" | "BOOLEAN_OPERATION" => {
+            "VECTOR" | "STAR" | "REGULAR_POLYGON" | "BOOLEAN_OPERATION" | "CONNECTOR"
+            | "WASHI_TAPE" | "HIGHLIGHT" => {
                 Node::new(NodeKind::Vector(Arc::new(VectorData::default())), name)
             }
             "CANVAS" | "DOCUMENT" => return Ok(()),
@@ -332,6 +358,25 @@ impl<'a, 's> Builder<'a, 's> {
             .map_err(|e| e.to_string())?;
         if ty == "SYMBOL" {
             self.symbols.insert(id, built);
+        }
+        // FigJam stickies and labelled shapes carry their text on the node itself.
+        if matches!(ty, "STICKY" | "SHAPE_WITH_TEXT" | "CODE_BLOCK")
+            && let Some(mut t) = self.text(nc)
+            && !t.content.is_empty()
+        {
+            t.sizing = TextSizing::Fixed;
+            t.align_v = TextAlignV::Center;
+            let (w, h) = self
+                .doc
+                .node(built)
+                .map_or((0.0, 0.0), |n| (n.size.w, n.size.h));
+            let pad = 12.0_f32.min(w / 4.0);
+            let label = Node::new(NodeKind::Text(Box::new(t)), Symbol::EMPTY)
+                .with_transform(Affine::translate(pad, 0.0))
+                .with_size((w - 2.0 * pad).max(0.0), h);
+            self.doc
+                .build_child(built, label)
+                .map_err(|e| e.to_string())?;
         }
 
         // Boolean operations are drawn from their computed geometry; operands are not needed.

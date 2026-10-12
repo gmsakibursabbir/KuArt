@@ -78,8 +78,34 @@ tag v*:     build → package (msi, zip, AppImage, deb, rpm, cli archives) → s
             → GitHub Release draft → winget PR → Flathub PR
 ```
 
-The PR workflow is in `.github/workflows/ci.yml`. The release workflow is added in M13, when
-there is a GUI binary to package.
+The PR workflow is `.github/workflows/ci.yml`; the release workflow is
+`.github/workflows/release.yml` (M14). Running it manually (*Actions → Release → Run workflow*)
+builds every package as workflow artifacts without publishing. Pushing a tag `vX.Y.Z` that
+matches the `Cargo.toml` version publishes a **draft** release with all packages and
+`SHA256SUMS`.
+
+| Output | Built with | Source |
+|---|---|---|
+| `KuArt-X.Y.Z-x64.msi` | WiX 5 (`wix build`) | `packaging/windows/kuart.wxs` |
+| `KuArt-X.Y.Z-x64-setup.exe` | Inno Setup 6 | `packaging/windows/kuart.iss` |
+| `KuArt-X.Y.Z-x64.exe` (standalone) | copy of the static-CRT binary | |
+| `KuArt-X.Y.Z-windows-x64-portable.zip`, `design-editor-cli-…-windows-x64.zip` | `Compress-Archive` | |
+| `kuart_X.Y.Z-1_amd64.deb` | `cargo-deb` | `[package.metadata.deb]` in `crates/app/Cargo.toml` |
+| `kuart-X.Y.Z-1.x86_64.rpm` | `cargo-generate-rpm` | `[package.metadata.generate-rpm]` |
+| `KuArt-X.Y.Z-x86_64.AppImage` | `appimagetool` | AppDir assembled in the workflow |
+| `kuart-bin-X.Y.Z-1-x86_64.pkg.tar.zst` (Arch) | `makepkg` in an `archlinux` container | `packaging/arch/PKGBUILD` (AUR-ready) |
+| `KuArt-X.Y.Z-linux-x86_64.tar.gz` (bundle) | `tar` | binaries, desktop files, icons |
+| `design-editor-cli-…-linux-x86_64.tar.gz` | `tar` | |
+| Flatpak | `flatpak-builder` (Flathub PR, manual) | `packaging/flatpak/` |
+| winget | `wingetcreate` (manual for the first release) | `packaging/winget/README.md` |
+
+Linux binaries are built with `cargo zigbuild --target x86_64-unknown-linux-gnu.2.31` (glibc
+floor 2.31); the workflow prints the newest GLIBC symbol it links. Both jobs enforce the size
+budget and smoke-test the CLI (generate → PNG export → code generation).
+
+Signing is optional and secret-driven: `WINDOWS_CERT_BASE64` and `WINDOWS_CERT_PASSWORD` (a .pfx)
+sign the exes and the MSI with signtool; `GPG_PRIVATE_KEY` signs `SHA256SUMS`. Without them,
+packages are unsigned. Clean-machine install smoke tests (§7) are manual for each release.
 
 ## 7. Test matrix for releases (manual smoke + automated)
 

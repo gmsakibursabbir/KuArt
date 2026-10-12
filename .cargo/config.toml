@@ -1,0 +1,4 @@
+# Windows: static C runtime, so no Visual C++ redistributable is needed (distribution.md §4).
+# CI sets RUSTFLAGS, which replaces this; release.yml passes the flag explicitly.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

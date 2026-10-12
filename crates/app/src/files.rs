@@ -7,10 +7,11 @@ use ude_core::{Document, NodeKind};
 use crate::App;
 
 const OPENABLE: &[&str] = &[
-    "design", "fig", "psd", "psb", "svg", "png", "jpg", "jpeg", "webp",
+    "krt", "design", "fig", "jam", "deck", "buzz", "site", "make", "psd", "psb", "svg", "png",
+    "jpg", "jpeg", "webp",
 ];
 
-/// Loads a `.design` document or imports an image.
+/// Loads a `.krt` document or imports another format.
 pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
     let err = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
     let ext = path
@@ -39,7 +40,7 @@ pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
             }
             Ok(im.doc)
         }
-        "fig" => {
+        "fig" | "jam" | "deck" | "buzz" | "site" | "make" => {
             let bytes = std::fs::read(path).map_err(|e| err(&e))?;
             let im = ude_format_fig::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;
             for w in &im.warnings {
@@ -80,14 +81,13 @@ impl App {
         }
     }
 
-    /// Saves to the current `.design` file, or asks where (imported images, demo).
+    /// Saves to the current `.krt` file, or asks where (imported images, demo).
     pub(crate) fn save(&mut self) {
-        match self
-            .options
-            .file
-            .clone()
-            .filter(|p| p.extension().is_some_and(|e| e == "design"))
-        {
+        match self.options.file.clone().filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| ude_format_native::is_native_extension(&e.to_ascii_lowercase()))
+        }) {
             Some(path) => self.save_to(path),
             None => self.save_as(),
         }
@@ -100,8 +100,8 @@ impl App {
             .map_or(self.title.as_str(), |(s, _)| s)
             .to_owned();
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("KuArt design", &["design"])
-            .set_file_name(format!("{stem}.design"))
+            .add_filter("KuArt document", &[ude_format_native::EXTENSION])
+            .set_file_name(format!("{stem}.{}", ude_format_native::EXTENSION))
             .save_file()
         {
             self.save_to(path);

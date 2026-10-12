@@ -1,0 +1,39 @@
+# Flatpak (Flathub) build from source. Flathub builds offline, so crate sources are vendored:
+#   python3 flatpak-cargo-generator.py ../../Cargo.lock -o cargo-sources.json
+# (https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo), then:
+#   flatpak-builder --user --install build-dir io.github.gmsakibursabbir.KuArt.yml
+app-id: io.github.gmsakibursabbir.KuArt
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: design-editor
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Files are opened and saved through the desktop portal; Google Fonts downloads are
+  # user-initiated (status bar "Get" button).
+  - --share=network
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/kuart/cargo
+modules:
+  - name: kuart
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release -p ude-app -p ude-cli
+      - install -Dm755 target/release/design-editor /app/bin/design-editor
+      - install -Dm755 target/release/design-editor-cli /app/bin/design-editor-cli
+      - install -Dm644 packaging/linux/io.github.gmsakibursabbir.KuArt.desktop /app/share/applications/io.github.gmsakibursabbir.KuArt.desktop
+      - install -Dm644 packaging/linux/io.github.gmsakibursabbir.KuArt.metainfo.xml /app/share/metainfo/io.github.gmsakibursabbir.KuArt.metainfo.xml
+      - install -Dm644 packaging/linux/io.github.gmsakibursabbir.KuArt.xml /app/share/mime/packages/io.github.gmsakibursabbir.KuArt.xml
+      - install -Dm644 assets/icon.png /app/share/icons/hicolor/512x512/apps/io.github.gmsakibursabbir.KuArt.png
+    sources:
+      - type: dir
+        path: ../..
+      - cargo-sources.json
