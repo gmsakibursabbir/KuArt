@@ -2,8 +2,8 @@
 //! (power-of-two mip levels), kept under a byte budget and evicted least-recently-used.
 //! Pixels never live in the document (docs/memory-strategy.md §2.2–2.3).
 
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ude_core::assets::{AssetId, AssetSource, AssetStore, Codec};
 use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
@@ -51,7 +51,24 @@ pub struct ImageCache {
     budget: usize,
     used: usize,
     frame: u64,
+    /// Set by an interactive app: misses decode on worker threads instead of blocking the
+    /// frame; `wake` asks for a redraw when one finishes. Exports leave it unset.
+    background: Option<Background>,
+    /// Decode synchronously even with a background (exports); see [`Self::set_blocking`].
+    blocking: bool,
 }
+
+type Key = (AssetId, u8);
+type Done = Arc<Mutex<Vec<(Key, Result<DecodedImage, String>)>>>;
+
+struct Background {
+    done: Done,
+    pending: HashSet<Key>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+}
+
+/// Decodes running at once (each holds a full-size image while it works).
+const MAX_DECODES: usize = 4;
 
 impl Default for ImageCache {
     fn default() -> Self {
@@ -67,7 +84,54 @@ impl ImageCache {
             budget,
             used: 0,
             frame: 0,
+            background: None,
+            blocking: false,
         }
+    }
+
+    /// Makes misses decode synchronously (true) or in the background again; returns the
+    /// previous setting.
+    pub fn set_blocking(&mut self, on: bool) -> bool {
+        std::mem::replace(&mut self.blocking, on)
+    }
+
+    /// Decode on worker threads from now on; `wake` is called (from a worker) when an image
+    /// is ready, so the app can redraw.
+    pub fn decode_in_background(&mut self, wake: impl Fn() + Send + Sync + 'static) {
+        self.background = Some(Background {
+            done: Arc::default(),
+            pending: HashSet::new(),
+            wake: Arc::new(wake),
+        });
+    }
+
+    /// Images still being decoded.
+    pub fn pending(&self) -> usize {
+        self.background.as_ref().map_or(0, |b| b.pending.len())
+    }
+
+    fn insert(
+        &mut self,
+        key: Key,
+        decoded: Result<DecodedImage, String>,
+    ) -> Option<Arc<DecodedImage>> {
+        let decoded = match decoded {
+            Ok(d) => Arc::new(d),
+            Err(e) => {
+                self.failed.insert(key.0, e);
+                return None;
+            }
+        };
+        self.used += decoded.bytes();
+        self.entries.insert(
+            key,
+            Entry {
+                image: Arc::clone(&decoded),
+                last_used: self.frame,
+            },
+        );
+        self.evict();
+        Some(decoded)
     }
 
     /// Bytes of decoded pixels currently held.
@@ -87,6 +151,16 @@ impl ImageCache {
     /// Marks a new frame for LRU bookkeeping.
     pub fn next_frame(&mut self) {
         self.frame += 1;
+        let finished = self.background.as_mut().map(|b| {
+            let list = std::mem::take(&mut *b.done.lock().unwrap_or_else(|e| e.into_inner()));
+            for (key, _) in &list {
+                b.pending.remove(key);
+            }
+            list
+        });
+        for (key, result) in finished.into_iter().flatten() {
+            self.insert(key, result);
+        }
     }
 
     /// The image at the smallest mip level that still covers `needed` device pixels.
@@ -106,23 +180,44 @@ impl ImageCache {
             e.last_used = self.frame;
             return Some(Arc::clone(&e.image));
         }
-        let decoded = match decode(assets, id, level) {
-            Ok(d) => Arc::new(d),
-            Err(e) => {
-                self.failed.insert(id, e);
-                return None;
+        let bg = match &mut self.background {
+            Some(bg) if !self.blocking => bg,
+            _ => {
+                let decoded = decode(assets, id, level);
+                return self.insert((id, level), decoded);
             }
         };
-        self.used += decoded.bytes();
-        self.entries.insert(
-            (id, level),
-            Entry {
-                image: Arc::clone(&decoded),
-                last_used: self.frame,
-            },
-        );
-        self.evict();
-        Some(decoded)
+        let key = (id, level);
+        if !bg.pending.contains(&key) && bg.pending.len() < MAX_DECODES {
+            match assets.get(id).map(|e| &e.source) {
+                Some(AssetSource::Memory { bytes, codec }) => {
+                    let (bytes, codec) = (Arc::clone(bytes), *codec);
+                    let (done, wake) = (Arc::clone(&bg.done), Arc::clone(&bg.wake));
+                    bg.pending.insert(key);
+                    std::thread::spawn(move || {
+                        let result = decode_bytes(&bytes, codec, level);
+                        done.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .push((key, result));
+                        wake();
+                    });
+                }
+                _ => {
+                    self.failed.insert(id, "image bytes are not loaded".into());
+                    return None;
+                }
+            }
+        }
+        // Meanwhile, any other resolution of the same image beats a placeholder.
+        let frame = self.frame;
+        self.entries
+            .iter_mut()
+            .filter(|((a, _), _)| *a == id)
+            .min_by_key(|((_, l), _)| l.abs_diff(level))
+            .map(|(_, e)| {
+                e.last_used = frame;
+                Arc::clone(&e.image)
+            })
     }
 
     fn evict(&mut self) {
@@ -158,7 +253,11 @@ fn decode(assets: &AssetStore, id: AssetId, level: u8) -> Result<DecodedImage, S
     let AssetSource::Memory { bytes, codec } = &entry.source else {
         return Err("image bytes are not loaded".into());
     };
-    let img = if *codec == Codec::PsdChannels {
+    decode_bytes(bytes, *codec, level)
+}
+
+fn decode_bytes(bytes: &[u8], codec: Codec, level: u8) -> Result<DecodedImage, String> {
+    let img = if codec == Codec::PsdChannels {
         let (w, h, rgba) = ude_format_psd::decode_rgba(bytes)?;
         image::RgbaImage::from_raw(w, h, rgba)
             .ok_or("PSD layer size mismatch")?

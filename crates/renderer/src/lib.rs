@@ -674,6 +674,20 @@ pub(crate) fn paint_for_export(
     painter: &mut impl Painter,
     caches: &mut RenderCaches,
 ) {
+    // Exports wait for every image instead of drawing placeholders.
+    let was = caches.images.set_blocking(true);
+    paint_export_inner(doc, id, view, viewport, painter, caches);
+    caches.images.set_blocking(was);
+}
+
+fn paint_export_inner(
+    doc: &Document,
+    id: NodeId,
+    view: Affine,
+    viewport: Rect,
+    painter: &mut impl Painter,
+    caches: &mut RenderCaches,
+) {
     caches.images.next_frame();
     let mut tcx = Cx {
         doc,
@@ -686,9 +700,7 @@ pub(crate) fn paint_for_export(
         .node(id)
         .is_some_and(|n| matches!(n.kind, NodeKind::Page | NodeKind::Document));
     if is_page {
-        for &child in doc.children(id) {
-            tcx.node(child, view, 1.0);
-        }
+        tcx.children(doc.children(id), view, 1.0);
     } else {
         // Start from the parent's world transform so the layer renders exactly as on canvas.
         let parent = doc

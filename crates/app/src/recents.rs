@@ -21,6 +21,12 @@ fn list_path() -> Option<PathBuf> {
     data_dir().map(|d| d.join("recent.txt"))
 }
 
+/// Whether the home screen already has a preview for `path`.
+pub fn has_thumbnail(path: &Path) -> bool {
+    let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    thumb_path(&path).is_some_and(|p| p.exists())
+}
+
 fn thumb_path(file: &Path) -> Option<PathBuf> {
     let hash = blake3::hash(file.to_string_lossy().as_bytes()).to_hex();
     data_dir().map(|d| d.join("thumbs").join(format!("{}.png", &hash[..16])))

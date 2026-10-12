@@ -227,6 +227,8 @@ pub struct Status<'a> {
     pub update: Option<(&'a str, &'a str, bool)>,
     /// Progress or result of the last update check or install.
     pub update_status: Option<&'a str>,
+    /// Name of a file being opened: a loading screen covers the window.
+    pub loading: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -276,6 +278,9 @@ impl Panels {
         t: &Tokens,
     ) -> (Vec<Action>, Rect) {
         let mut actions = Vec::new();
+        if let Some(name) = status.loading {
+            loading_screen(root.ctx(), name, t);
+        }
         tab_strip(root, status, t, &mut actions);
         if status.home {
             self.home
@@ -961,6 +966,47 @@ fn submenu(ui: &Ui, glyph: &str, label: &str) -> egui::text::LayoutJob {
     job
 }
 
+/// Dims the window and shows which file is opening, with a spinner (repaints itself).
+fn loading_screen(ctx: &egui::Context, name: &str, t: &Tokens) {
+    let screen = ctx.content_rect();
+    egui::Area::new("loading_dim".into())
+        .order(egui::Order::Foreground)
+        .fixed_pos(screen.min)
+        .interactable(true)
+        .show(ctx, |ui| {
+            let (rect, _) = ui.allocate_exact_size(screen.size(), egui::Sense::click_and_drag());
+            ui.painter()
+                .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(140));
+        });
+    egui::Area::new("loading_card".into())
+        .order(egui::Order::Tooltip)
+        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(t.bg_raised)
+                .stroke(egui::Stroke::new(1.0_f32, t.border_strong))
+                .corner_radius(10.0)
+                .inner_margin(egui::Margin::symmetric(28, 22))
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add(egui::Spinner::new().size(28.0).color(t.accent));
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new(format!("Opening {name}"))
+                                .size(14.0)
+                                .strong()
+                                .color(t.text_primary),
+                        );
+                        ui.label(
+                            RichText::new("Large files can take a few seconds")
+                                .size(11.5)
+                                .color(t.text_muted),
+                        );
+                    });
+                });
+        });
+}
+
 /// Menu entry: icon, label, and the shortcut right-aligned, across the menu width.
 fn menu_item(
     ui: &mut Ui,
@@ -1297,6 +1343,7 @@ mod tests {
                 true,
             )),
             update_status: Some("KuArt 9.9.9 is available"),
+            loading: Some("Big file.fig"),
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

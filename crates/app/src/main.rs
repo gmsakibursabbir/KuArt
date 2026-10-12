@@ -191,6 +191,8 @@ struct App {
     update_ready: Option<PathBuf>,
     /// Leave the event loop at the next opportunity (after starting the installer).
     quit: bool,
+    /// File being opened on a worker thread (shown as a loading screen).
+    loading: Option<String>,
 }
 
 enum Drag {
@@ -270,6 +272,7 @@ impl App {
             update_status: None,
             update_ready: None,
             quit: false,
+            loading: None,
             index,
             selection: Selection::default(),
             hover: None,
@@ -401,6 +404,7 @@ impl App {
             hint,
             update,
             update_status: self.update_status.as_deref(),
+            loading: self.loading.as_deref(),
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -1237,6 +1241,13 @@ impl ApplicationHandler<AppEvent> for App {
         match event {
             AppEvent::FontDownloaded { family, result } => self.font_downloaded(family, result),
             AppEvent::UpdateChecked(result) => self.update_checked(result),
+            AppEvent::Opened { path, result } => self.opened(path, result.map(|d| *d)),
+            AppEvent::ImageReady => {
+                if let Some(b) = &mut self.backend {
+                    b.invalidate();
+                }
+                self.redraw();
+            }
             AppEvent::UpdateInstalled(result) => self.update_installed(result),
         }
     }
@@ -1443,6 +1454,11 @@ fn main() -> std::process::ExitCode {
     }
     app.recover();
     app.proxy = Some(event_loop.create_proxy());
+    // Images decode off the UI thread; the canvas redraws as each one arrives.
+    let wake = event_loop.create_proxy();
+    app.caches.images.decode_in_background(move || {
+        let _ = wake.send_event(AppEvent::ImageReady);
+    });
     app.saved_revision = app.doc.revision();
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("error: {e}");
@@ -1465,6 +1481,13 @@ pub(crate) enum AppEvent {
         result: Result<Vec<PathBuf>, String>,
     },
     UpdateChecked(Result<Option<update::Release>, String>),
+    /// A background image decode finished.
+    ImageReady,
+    /// A file finished loading on a worker thread.
+    Opened {
+        path: PathBuf,
+        result: Result<Box<Document>, String>,
+    },
     UpdateInstalled(Result<update::Installed, String>),
 }
 

@@ -115,15 +115,43 @@ impl App {
         }
     }
 
-    /// Loads `path`, records it in recents and leaves the home screen.
+    /// Loads `path` on a worker thread (the window keeps responding and shows a loading
+    /// screen); [`Self::opened`] takes the result.
     pub(crate) fn open_path(&mut self, path: PathBuf) {
-        match load_path(&path) {
+        if self.loading.is_some() {
+            return;
+        }
+        let Some(proxy) = self.proxy.clone() else {
+            return;
+        };
+        let name = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        self.loading = Some(name);
+        std::thread::spawn(move || {
+            let result = load_path(&path);
+            // The first time a file is opened, render its home-screen preview here too.
+            if let Ok(doc) = &result
+                && !crate::recents::has_thumbnail(&path)
+                && let Some(&page) = doc.children(doc.root()).first()
+            {
+                let mut caches = ude_renderer::RenderCaches::default();
+                crate::recents::write_thumbnail(&path, doc, page, &mut caches);
+            }
+            let result = result.map(Box::new);
+            let _ = proxy.send_event(crate::AppEvent::Opened { path, result });
+        });
+        self.redraw();
+    }
+
+    /// A worker finished loading a file.
+    pub(crate) fn opened(&mut self, path: PathBuf, result: Result<Document, String>) {
+        self.loading = None;
+        match result {
             Ok(doc) => {
                 self.open_in_new_tab(doc, Some(path.clone()));
                 crate::recents::touch(&path);
-                if let Some(page) = self.page {
-                    crate::recents::write_thumbnail(&path, &self.doc, page, &mut self.caches);
-                }
                 self.recents_dirty = true;
             }
             Err(e) => {
