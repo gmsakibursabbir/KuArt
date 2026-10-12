@@ -316,8 +316,6 @@ impl Panels {
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     self.main_menu(ui, status, t, actions);
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("KuArt").strong().color(t.text_primary));
 
                     // Centre: document and page.
                     let page_name = doc.node(page).map_or("", |n| doc.strings.resolve(n.name));
@@ -389,6 +387,7 @@ impl Panels {
             });
     }
 
+    /// Logo and the global menu bar: File, Edit, View, Object, Help.
     fn main_menu(
         &mut self,
         ui: &mut Ui,
@@ -396,14 +395,27 @@ impl Panels {
         t: &Tokens,
         actions: &mut Vec<Action>,
     ) {
-        let logo = RichText::new(icons::MENU)
-            .family(egui::FontFamily::Name(theme::ICONS.into()))
-            .size(16.0)
-            .color(t.text_primary);
-        ui.menu_button(logo, |ui| {
-            ui.set_min_width(230.0);
-            menu_item(ui, "Back to files", "", actions, Action::Home);
-            ui.separator();
+        let (r, logo) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
+        ui.painter().rect_filled(r, 7.0, t.accent);
+        ui.painter().text(
+            r.center(),
+            Align2::CENTER_CENTER,
+            "K",
+            FontId::proportional(14.0),
+            t.on_accent,
+        );
+        if logo.on_hover_text("Back to files").clicked() {
+            actions.push(Action::Home);
+        }
+        ui.add_space(6.0);
+        // Menu titles are plain text until hovered or open, like desktop menu bars.
+        let w = &mut ui.visuals_mut().widgets;
+        w.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+        w.inactive.bg_fill = egui::Color32::TRANSPARENT;
+        let menu = |label: &str| RichText::new(label).size(12.5).color(t.text_secondary);
+
+        ui.menu_button(menu("File"), |ui| {
+            ui.set_min_width(240.0);
             menu_item(ui, "New design", "Ctrl+N", actions, Action::New);
             menu_item(ui, "Open…", "Ctrl+O", actions, Action::Open);
             menu_item(ui, "Import…", "", actions, Action::Import);
@@ -427,71 +439,102 @@ impl Panels {
             menu_item(ui, "Save as…", "Ctrl+Shift+S", actions, Action::SaveAs);
             menu_item(ui, "Export…", "Ctrl+Shift+E", actions, Action::Export);
             ui.separator();
-            ui.menu_button("Edit", |ui| {
-                menu_item(ui, "Undo", "Ctrl+Z", actions, Action::Undo);
-                menu_item(ui, "Redo", "Ctrl+Y", actions, Action::Redo);
-                ui.separator();
-                menu_item(ui, "Copy", "Ctrl+C", actions, Action::Edit(Edit::Copy));
-                menu_item(ui, "Cut", "Ctrl+X", actions, Action::Edit(Edit::Cut));
-                menu_item(ui, "Paste", "Ctrl+V", actions, Action::Edit(Edit::Paste));
-                menu_item(
-                    ui,
-                    "Duplicate",
-                    "Ctrl+D",
-                    actions,
-                    Action::Edit(Edit::Duplicate),
-                );
-                menu_item(ui, "Delete", "Del", actions, Action::Edit(Edit::Delete));
-                ui.separator();
-                menu_item(
-                    ui,
-                    "Select all",
-                    "Ctrl+A",
-                    actions,
-                    Action::Edit(Edit::SelectAll),
-                );
-            });
-            ui.menu_button("Object", |ui| {
-                menu_item(ui, "Group", "Ctrl+G", actions, Action::Edit(Edit::Group));
-                menu_item(
-                    ui,
-                    "Ungroup",
-                    "Ctrl+Shift+G",
-                    actions,
-                    Action::Edit(Edit::Ungroup),
-                );
-                ui.separator();
-                menu_item(
-                    ui,
-                    "Bring forward",
-                    "Ctrl+]",
-                    actions,
-                    Action::Edit(Edit::BringForward),
-                );
-                menu_item(
-                    ui,
-                    "Send backward",
-                    "Ctrl+[",
-                    actions,
-                    Action::Edit(Edit::SendBackward),
-                );
-            });
-            ui.menu_button("View", |ui| {
-                menu_item(ui, "Zoom to fit", "Shift+1", actions, Action::ZoomToFit);
-                menu_item(ui, "Zoom to 100%", "Ctrl+0", actions, Action::Zoom100);
-                ui.separator();
-                if ui.checkbox(&mut self.dev_mode, "Dev Mode").clicked() {
+            menu_item(ui, "Add page", "", actions, Action::AddPage);
+            ui.separator();
+            menu_item(ui, "Back to files", "", actions, Action::Home);
+        });
+        ui.menu_button(menu("Edit"), |ui| {
+            ui.set_min_width(240.0);
+            menu_item(ui, "Undo", "Ctrl+Z", actions, Action::Undo);
+            menu_item(ui, "Redo", "Ctrl+Y", actions, Action::Redo);
+            ui.separator();
+            menu_item(ui, "Copy", "Ctrl+C", actions, Action::Edit(Edit::Copy));
+            menu_item(ui, "Cut", "Ctrl+X", actions, Action::Edit(Edit::Cut));
+            menu_item(ui, "Paste", "Ctrl+V", actions, Action::Edit(Edit::Paste));
+            menu_item(
+                ui,
+                "Duplicate",
+                "Ctrl+D",
+                actions,
+                Action::Edit(Edit::Duplicate),
+            );
+            menu_item(ui, "Delete", "Del", actions, Action::Edit(Edit::Delete));
+            ui.separator();
+            menu_item(
+                ui,
+                "Select all",
+                "Ctrl+A",
+                actions,
+                Action::Edit(Edit::SelectAll),
+            );
+        });
+        ui.menu_button(menu("View"), |ui| {
+            ui.set_min_width(240.0);
+            menu_item(ui, "Zoom in", "Ctrl+=", actions, Action::ZoomIn);
+            menu_item(ui, "Zoom out", "Ctrl+-", actions, Action::ZoomOut);
+            menu_item(ui, "Zoom to fit", "Shift+1", actions, Action::ZoomToFit);
+            menu_item(ui, "Zoom to 100%", "Ctrl+0", actions, Action::Zoom100);
+            ui.separator();
+            if ui.checkbox(&mut self.dev_mode, "Dev Mode").clicked() {
+                ui.close();
+            }
+            menu_item(ui, "Diagnostics", "F12", actions, Action::ToggleDiagnostics);
+            ui.separator();
+            ui.label(RichText::new("Theme").size(11.0).color(t.text_muted));
+            for c in ThemeChoice::ALL {
+                if ui.radio(self.theme == c, c.label()).clicked() {
+                    self.theme = c;
                     ui.close();
                 }
-                menu_item(ui, "Diagnostics", "F12", actions, Action::ToggleDiagnostics);
-                ui.separator();
-                for c in ThemeChoice::ALL {
-                    if ui.radio(self.theme == c, c.label()).clicked() {
-                        self.theme = c;
-                        ui.close();
-                    }
-                }
-            });
+            }
+        });
+        ui.menu_button(menu("Object"), |ui| {
+            ui.set_min_width(240.0);
+            menu_item(ui, "Group", "Ctrl+G", actions, Action::Edit(Edit::Group));
+            menu_item(
+                ui,
+                "Ungroup",
+                "Ctrl+Shift+G",
+                actions,
+                Action::Edit(Edit::Ungroup),
+            );
+            ui.separator();
+            menu_item(
+                ui,
+                "Bring forward",
+                "Ctrl+]",
+                actions,
+                Action::Edit(Edit::BringForward),
+            );
+            menu_item(
+                ui,
+                "Send backward",
+                "Ctrl+[",
+                actions,
+                Action::Edit(Edit::SendBackward),
+            );
+        });
+        ui.menu_button(menu("Help"), |ui| {
+            ui.set_min_width(260.0);
+            ui.label(RichText::new(concat!("KuArt ", env!("CARGO_PKG_VERSION"))).strong());
+            ui.label(
+                RichText::new("Native, offline design editor")
+                    .size(11.0)
+                    .color(t.text_muted),
+            );
+            ui.separator();
+            ui.label(RichText::new("Tools: V F R O P S L T").size(11.5));
+            ui.label(RichText::new("Pan: Space+drag or wheel · Zoom: Ctrl+wheel").size(11.5));
+            ui.label(RichText::new("Diagnostics: F12 · Stats: F3").size(11.5));
+            ui.separator();
+            ui.hyperlink_to(
+                "Documentation and source",
+                "https://github.com/gmsakibursabbir/KuArt",
+            );
+            ui.hyperlink_to(
+                "Report a problem",
+                "https://github.com/gmsakibursabbir/KuArt/issues",
+            );
         });
     }
 
