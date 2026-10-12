@@ -3,6 +3,7 @@
 
 pub mod commands;
 pub mod create;
+pub mod layout;
 pub mod path_edit;
 pub mod selection;
 pub mod snap;
