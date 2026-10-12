@@ -151,11 +151,44 @@ pub fn install_fonts(ctx: &egui::Context) {
     fonts
         .families
         .insert(FontFamily::Name(ICONS.into()), vec![ICONS.into()]);
+    // The OS interface font first (Segoe UI, Noto Sans, …); egui's own font stays as fallback.
+    if let Some(bytes) = system_ui_font() {
+        fonts
+            .font_data
+            .insert("system-ui".into(), egui::FontData::from_owned(bytes).into());
+        if let Some(list) = fonts.families.get_mut(&FontFamily::Proportional) {
+            list.insert(0, "system-ui".into());
+        }
+    }
     // Icons also work inside ordinary text (menus, buttons): Lucide uses private-use codepoints.
     if let Some(list) = fonts.families.get_mut(&FontFamily::Proportional) {
         list.push(ICONS.into());
     }
     ctx.set_fonts(fonts);
+}
+
+/// The platform's interface font file, if one of the usual ones is installed.
+fn system_ui_font() -> Option<Vec<u8>> {
+    let windows = std::env::var_os("WINDIR").map(|w| {
+        std::path::PathBuf::from(w)
+            .join("Fonts")
+            .join("segoeui.ttf")
+    });
+    let linux = [
+        "/usr/share/fonts/truetype/inter/Inter-Regular.ttf",
+        "/usr/share/fonts/inter/Inter-Regular.ttf",
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/cantarell/Cantarell-Regular.otf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ];
+    windows
+        .into_iter()
+        .chain(linux.iter().map(std::path::PathBuf::from))
+        .find_map(|p| std::fs::read(p).ok())
 }
 
 pub fn apply(ctx: &egui::Context, t: &Tokens) {

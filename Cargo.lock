@@ -3466,6 +3466,7 @@ dependencies = [
 name = "ude-bench"
 version = "0.2.0"
 dependencies = [
+ "egui_software_backend",
  "ude-core",
  "ude-diagnostics",
  "ude-editor",

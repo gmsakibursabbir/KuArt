@@ -15,6 +15,7 @@ ude-renderer = { path = "../renderer" }
 ude-spatial = { path = "../spatial" }
 ude-ui = { path = "../ui" }
 ude-diagnostics = { path = "../diagnostics" }
+egui_software_backend = { version = "0.0.3", default-features = false, features = ["std", "rayon"] }
 
 [lints]
 workspace = true
