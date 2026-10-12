@@ -30,6 +30,7 @@ ude-format-svg = { version = "0.0.1", path = "../formats/svg" }
 ude-format-svg-import = { version = "0.0.1", path = "../formats/svg-import" }
 ude-format-psd = { path = "../formats/psd" }
 ude-format-fig = { path = "../formats/fig" }
+ude-format-xd = { path = "../formats/xd" }
 ureq = "3"
 
 [lints]

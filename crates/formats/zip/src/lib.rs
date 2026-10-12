@@ -1,4 +1,4 @@
-//! Minimal ZIP reader for the `.fig` container (stored and deflated entries, no ZIP64).
+//! Minimal ZIP reader for design containers (.fig, .xd): stored and deflated entries, no ZIP64.
 
 use std::io::Read;
 
@@ -101,5 +101,61 @@ impl<'a> Zip<'a> {
             }
             m => Err(format!("{name}: unsupported ZIP compression {m}")),
         }
+    }
+}
+
+/// Writes an uncompressed ZIP (no CRCs). For building test fixtures.
+pub fn write_stored(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for (name, data) in entries {
+        let offset = out.len() as u32;
+        let header = |sig: u32, central: bool| {
+            let mut h = sig.to_le_bytes().to_vec();
+            if central {
+                h.extend([20, 0]); // made by
+            }
+            h.extend([20, 0, 0, 0, 0, 0, 0, 0, 0, 0]); // version, flags, method, time, date
+            h.extend(0u32.to_le_bytes()); // crc
+            h.extend((data.len() as u32).to_le_bytes());
+            h.extend((data.len() as u32).to_le_bytes());
+            h.extend((name.len() as u16).to_le_bytes());
+            h.extend(0u16.to_le_bytes()); // extra length
+            h
+        };
+        out.extend(header(0x0403_4b50, false));
+        out.extend(name.as_bytes());
+        out.extend(*data);
+        central.extend(header(0x0201_4b50, true));
+        central.extend([0u8; 6]); // comment length, disk, internal attributes
+        central.extend(0u32.to_le_bytes()); // external attributes
+        central.extend(offset.to_le_bytes());
+        central.extend(name.as_bytes());
+    }
+    let cd_offset = out.len() as u32;
+    out.extend(&central);
+    out.extend(0x0605_4b50u32.to_le_bytes());
+    out.extend([0u8; 4]);
+    out.extend((entries.len() as u16).to_le_bytes());
+    out.extend((entries.len() as u16).to_le_bytes());
+    out.extend((central.len() as u32).to_le_bytes());
+    out.extend(cd_offset.to_le_bytes());
+    out.extend([0u8; 2]);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_stored() {
+        let z = write_stored(&[("a.txt", b"hello"), ("dir/b", b"")]);
+        let zip = Zip::open(&z).unwrap();
+        assert_eq!(zip.names().collect::<Vec<_>>(), ["a.txt", "dir/b"]);
+        assert_eq!(zip.read("a.txt", 100).unwrap().unwrap(), b"hello");
+        assert!(zip.read("missing", 100).unwrap().is_none());
+        assert!(zip.read("a.txt", 2).is_err(), "size limit");
+        assert!(Zip::open(b"PK\x03\x04 broken").is_err());
     }
 }

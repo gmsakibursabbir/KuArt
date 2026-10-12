@@ -1,0 +1,18 @@
+[package]
+name = "ude-format-xd"
+description = "Adobe XD (.xd) import: UCF zip, AGC JSON graphics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+blake3 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+serde_json = "1"
+svgtypes = "0.16"
+ude-core = { path = "../../core" }
+ude-format-zip = { path = "../zip" }
+
+[lints]
+workspace = true

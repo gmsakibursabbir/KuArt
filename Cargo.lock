@@ -3171,6 +3171,7 @@ dependencies = [
  "ude-format-raster",
  "ude-format-svg",
  "ude-format-svg-import",
+ "ude-format-xd",
  "ude-renderer",
  "ude-spatial",
  "ude-ui",
@@ -3206,6 +3207,7 @@ dependencies = [
  "ude-format-raster",
  "ude-format-svg",
  "ude-format-svg-import",
+ "ude-format-xd",
  "ude-renderer",
 ]
 
@@ -3237,6 +3239,7 @@ dependencies = [
  "flate2",
  "image",
  "ude-core",
+ "ude-format-zip",
  "zstd",
 ]
 
@@ -3282,6 +3285,25 @@ dependencies = [
  "blake3",
  "ude-core",
  "usvg",
+]
+
+[[package]]
+name = "ude-format-xd"
+version = "0.0.1"
+dependencies = [
+ "blake3",
+ "image",
+ "serde_json",
+ "svgtypes",
+ "ude-core",
+ "ude-format-zip",
+]
+
+[[package]]
+name = "ude-format-zip"
+version = "0.0.1"
+dependencies = [
+ "flate2",
 ]
 
 [[package]]

@@ -10,7 +10,6 @@
 //! shadows and blurs, corner radii, masks, clipping and auto layout.
 
 mod kiwi;
-mod zip;
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -50,8 +49,8 @@ pub struct Imported {
 pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
     let mut images: HashMap<String, Vec<u8>> = HashMap::new();
     let canvas: Vec<u8>;
-    let canvas_bytes: &[u8] = if zip::Zip::is_zip(bytes) {
-        let z = zip::Zip::open(bytes)?;
+    let canvas_bytes: &[u8] = if ude_format_zip::Zip::is_zip(bytes) {
+        let z = ude_format_zip::Zip::open(bytes)?;
         canvas = z
             .read("canvas.fig", MAX_CHUNK)?
             .ok_or("the ZIP has no canvas.fig: not a Figma file")?;
@@ -773,7 +772,7 @@ impl<'a, 's> Builder<'a, 's> {
             .and_then(|f| f.str("family"))
             .map(|f| self.doc.strings.intern(f));
         let face = font.and_then(|f| f.str("style"));
-        let (weight, italic) = face.map_or((400, false), font_style);
+        let (weight, italic) = face.map_or((400, false), ude_core::typography::parse_font_style);
         let fills = self.paints(v.array("fillPaints"));
         let defaults = TextStyle {
             family: Symbol::EMPTY,
@@ -968,31 +967,6 @@ fn blend(b: &str) -> BlendMode {
         "LUMINOSITY" => BlendMode::Luminosity,
         _ => BlendMode::Normal,
     }
-}
-
-/// Font style name ("Semi Bold Italic") → (weight, italic).
-fn font_style(style: &str) -> (u16, bool) {
-    let s = style.to_ascii_lowercase().replace([' ', '-', '_'], "");
-    let italic = s.contains("italic") || s.contains("oblique");
-    let weight = [
-        ("thin", 100),
-        ("hairline", 100),
-        ("extralight", 200),
-        ("ultralight", 200),
-        ("semibold", 600),
-        ("demibold", 600),
-        ("extrabold", 800),
-        ("ultrabold", 800),
-        ("heavy", 800),
-        ("black", 900),
-        ("light", 300),
-        ("medium", 500),
-        ("bold", 700),
-    ]
-    .iter()
-    .find(|(k, _)| s.contains(k))
-    .map_or(400, |&(_, w)| w);
-    (weight, italic)
 }
 
 #[cfg(test)]

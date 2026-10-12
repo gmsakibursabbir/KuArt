@@ -333,44 +333,8 @@ fn fig(zstd_message: bool) -> Vec<u8> {
     out
 }
 
-/// Stored (uncompressed) ZIP with the given entries.
 fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut central = Vec::new();
-    for (name, data) in entries {
-        let offset = out.len() as u32;
-        let header = |sig: u32, central: bool| {
-            let mut h = sig.to_le_bytes().to_vec();
-            if central {
-                h.extend([20, 0]);
-            }
-            h.extend([20, 0, 0, 0, 0, 0, 0, 0, 0, 0]); // version, flags, method, time, date
-            h.extend(0u32.to_le_bytes()); // crc (not checked)
-            h.extend((data.len() as u32).to_le_bytes());
-            h.extend((data.len() as u32).to_le_bytes());
-            h.extend((name.len() as u16).to_le_bytes());
-            h.extend(0u16.to_le_bytes());
-            h
-        };
-        out.extend(header(0x0403_4b50, false));
-        out.extend(name.as_bytes());
-        out.extend(*data);
-        central.extend(header(0x0201_4b50, true));
-        central.extend([0u8; 6]); // comment len, disk, internal attrs
-        central.extend(0u32.to_le_bytes()); // external attrs
-        central.extend(offset.to_le_bytes());
-        central.extend(name.as_bytes());
-    }
-    let cd_offset = out.len() as u32;
-    out.extend(&central);
-    out.extend(0x0605_4b50u32.to_le_bytes());
-    out.extend([0u8; 4]);
-    out.extend((entries.len() as u16).to_le_bytes());
-    out.extend((entries.len() as u16).to_le_bytes());
-    out.extend((central.len() as u32).to_le_bytes());
-    out.extend(cd_offset.to_le_bytes());
-    out.extend([0u8; 2]);
-    out
+    ude_format_zip::write_stored(entries)
 }
 
 fn check(im: &Imported) {
@@ -437,8 +401,20 @@ fn rejects_bad_input() {
 
 #[test]
 fn font_styles() {
-    assert_eq!(font_style("Semi Bold Italic"), (600, true));
-    assert_eq!(font_style("ExtraLight"), (200, false));
-    assert_eq!(font_style("Regular"), (400, false));
-    assert_eq!(font_style("Black"), (900, false));
+    assert_eq!(
+        ude_core::typography::parse_font_style("Semi Bold Italic"),
+        (600, true)
+    );
+    assert_eq!(
+        ude_core::typography::parse_font_style("ExtraLight"),
+        (200, false)
+    );
+    assert_eq!(
+        ude_core::typography::parse_font_style("Regular"),
+        (400, false)
+    );
+    assert_eq!(
+        ude_core::typography::parse_font_style("Black"),
+        (900, false)
+    );
 }

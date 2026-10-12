@@ -137,3 +137,30 @@ impl TextData {
             + (self.styles.len() * size_of::<TextStyle>()) / Arc::strong_count(&self.styles)
     }
 }
+
+/// Font style name ("Semi Bold Italic", "ExtraLight") → (weight, italic), as design files
+/// name faces.
+pub fn parse_font_style(style: &str) -> (u16, bool) {
+    let s = style.to_ascii_lowercase().replace([' ', '-', '_'], "");
+    let italic = s.contains("italic") || s.contains("oblique");
+    // Compound names first: "semibold" also contains "bold".
+    let weight = [
+        ("thin", 100),
+        ("hairline", 100),
+        ("extralight", 200),
+        ("ultralight", 200),
+        ("semibold", 600),
+        ("demibold", 600),
+        ("extrabold", 800),
+        ("ultrabold", 800),
+        ("heavy", 800),
+        ("black", 900),
+        ("light", 300),
+        ("medium", 500),
+        ("bold", 700),
+    ]
+    .iter()
+    .find(|(k, _)| s.contains(k))
+    .map_or(400, |&(_, w)| w);
+    (weight, italic)
+}

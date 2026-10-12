@@ -31,6 +31,14 @@ pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
             }
             Ok(im.doc)
         }
+        "xd" => {
+            let bytes = std::fs::read(path).map_err(|e| err(&e))?;
+            let im = ude_format_xd::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
         "fig" => {
             let bytes = std::fs::read(path).map_err(|e| err(&e))?;
             let im = ude_format_fig::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;

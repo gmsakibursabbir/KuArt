@@ -24,6 +24,7 @@ serde_json = "1"
 ude-codegen = { path = "../codegen" }
 ude-format-psd = { path = "../formats/psd" }
 ude-format-fig = { path = "../formats/fig" }
+ude-format-xd = { path = "../formats/xd" }
 
 [lints]
 workspace = true
