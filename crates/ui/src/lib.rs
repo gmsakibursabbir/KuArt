@@ -9,6 +9,7 @@ mod home;
 pub mod icons;
 mod inspector;
 mod layers;
+mod palette;
 pub mod theme;
 pub mod widgets;
 
@@ -236,6 +237,8 @@ pub struct Panels {
     pub dev_mode: bool,
     /// Right panel shows comments.
     pub comments_open: bool,
+    /// Command palette (Ctrl+K).
+    pub palette: palette::Palette,
     inspector: Inspector,
     comments: comments::CommentsPanel,
     dev: devmode::DevMode,
@@ -376,6 +379,7 @@ impl Panels {
 
         let canvas = root.available_rect_before_wrap();
         tool_pill(root.ctx(), canvas, status.tool, t, &mut actions);
+        self.palette.ui(root, doc, page, t, &mut actions);
         (actions, canvas)
     }
 
@@ -491,6 +495,19 @@ impl Panels {
                         ui.add_enabled_ui(status.can_undo, |ui| {
                             if icon_button(ui, t, icons::UNDO_2, "Undo  Ctrl+Z", false).clicked() {
                                 actions.push(Action::Undo);
+                            }
+                        });
+                        ui.scope(|ui| {
+                            if icon_button(
+                                ui,
+                                t,
+                                icons::SEARCH,
+                                "Search commands and layers  Ctrl+K",
+                                false,
+                            )
+                            .clicked()
+                            {
+                                self.palette.open();
                             }
                         });
                     });

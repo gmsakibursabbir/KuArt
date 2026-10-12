@@ -767,6 +767,17 @@ impl App {
                     (cur + 1) % n
                 });
             }
+            // Ctrl+Alt combinations first: the Alt-only and Ctrl-only arms below would take them.
+            KeyCode::KeyU if ctrl && alt => self.boolean(BoolOpKind::Union),
+            KeyCode::KeyS if ctrl && alt => self.boolean(BoolOpKind::Subtract),
+            KeyCode::KeyI if ctrl && alt => self.boolean(BoolOpKind::Intersect),
+            KeyCode::KeyX if ctrl && alt => self.boolean(BoolOpKind::Exclude),
+            KeyCode::KeyM if ctrl && alt => self.structural("mask"),
+            KeyCode::KeyE if ctrl && !shift => self.structural("flatten"),
+            KeyCode::KeyK if ctrl => {
+                self.panels.palette.open();
+                self.redraw();
+            }
             KeyCode::KeyA if alt => self.align(ude_editor::Align::Left),
             KeyCode::KeyD if alt => self.align(ude_editor::Align::Right),
             KeyCode::KeyH if alt && shift => self.align(ude_editor::Align::DistributeH),
@@ -782,12 +793,6 @@ impl App {
             }
             KeyCode::KeyV if ctrl => self.paste(),
             KeyCode::KeyD if ctrl => self.structural("duplicate"),
-            KeyCode::KeyU if ctrl && alt => self.boolean(BoolOpKind::Union),
-            KeyCode::KeyS if ctrl && alt => self.boolean(BoolOpKind::Subtract),
-            KeyCode::KeyI if ctrl && alt => self.boolean(BoolOpKind::Intersect),
-            KeyCode::KeyX if ctrl && alt => self.boolean(BoolOpKind::Exclude),
-            KeyCode::KeyE if ctrl => self.structural("flatten"),
-            KeyCode::KeyM if ctrl && alt => self.structural("mask"),
             KeyCode::KeyG if ctrl && shift => self.structural("ungroup"),
             KeyCode::KeyG if ctrl => self.structural("group"),
             KeyCode::BracketRight if ctrl => self.arrange(if shift {

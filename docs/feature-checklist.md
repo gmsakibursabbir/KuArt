@@ -19,7 +19,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✓ Multi-select and selection tools (click, Shift, marquee, deep select)
 - ~ Clipboard, copy/paste and paste-in-place (in-app paste; no cross-document or paste-in-place)
 - ✓ Undo and redo history
-- ✗ Search layers and objects
+- ✓ Search layers and objects (command palette, Ctrl+K)
 - ✗ Canvas minimap / navigator
 - ✓ Multiple open documents (tabs)
 - ✗ Document templates
