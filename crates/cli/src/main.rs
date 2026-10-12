@@ -26,7 +26,7 @@ USAGE:
     design-editor-cli --version
 
 Supported now: .design. Importers arrive in later milestones:
-    .svg (M9), .psd (M10), .fig (M11), .xd (M12). Images (.png .jpg .webp) open; output
+    .psd (M10), .fig (M11), .xd (M12). .svg and images (.png .jpg .webp) open; output
     can be .design, .png or .svg (first page).";
 
 fn main() -> ExitCode {
@@ -79,7 +79,18 @@ fn open(path: &Path) -> Result<Document, String> {
                 .map_or_else(|| "image".into(), |n| n.to_string_lossy().into_owned());
             ude_format_raster::import(bytes, &name).map_err(|e| format!("{}: {e}", path.display()))
         }
-        "svg" => Err("SVG import is not implemented yet (milestone M9)".into()),
+        "svg" => {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let name = path
+                .file_name()
+                .map_or_else(|| "drawing".into(), |n| n.to_string_lossy().into_owned());
+            let im = ude_format_svg_import::import(&bytes, &name)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
         "psd" | "psb" => Err("PSD import is not implemented yet (milestone M10)".into()),
         "fig" => Err("Figma import is not implemented yet (milestone M11)".into()),
         "xd" => Err("Adobe XD import is not implemented yet (milestone M12)".into()),
@@ -194,7 +205,11 @@ fn cmd_convert(input: &Path, output: &Path) -> CliResult {
                     &mut ude_renderer::RenderCaches::default(),
                 )?
             } else {
-                ude_format_svg::export(&doc, page)?.into_bytes()
+                let mut text = ude_renderer::TextEngine::default();
+                ude_format_svg::export_with(&doc, page, &mut |t, size| {
+                    text.lines(t, &doc.strings, size)
+                })?
+                .into_bytes()
             };
             std::fs::write(output, bytes).map_err(|e| format!("{}: {e}", output.display()))?;
         }

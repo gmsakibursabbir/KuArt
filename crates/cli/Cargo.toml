@@ -18,6 +18,7 @@ ude-bench = { path = "../benchmarks" }
 ude-format-raster = { version = "0.0.1", path = "../formats/raster" }
 ude-renderer = { version = "0.0.1", path = "../renderer" }
 ude-format-svg = { version = "0.0.1", path = "../formats/svg" }
+ude-format-svg-import = { version = "0.0.1", path = "../formats/svg-import" }
 
 [lints]
 workspace = true

@@ -740,15 +740,24 @@ mod tests {
     #[test]
     fn export_renders_layer_at_scale() {
         let fill = Paints::new(vec![Paint::solid(Color::from_rgba8(10, 20, 30, 128))]);
-        let (doc, page) = page_with(vec![Node::new(NodeKind::Rectangle, Symbol::EMPTY)
-            .with_transform(ude_core::Affine::translate(100.0, 50.0))
-            .with_size(20.0, 10.0)
-            .with_fills(fill)]);
+        let (doc, page) = page_with(vec![
+            Node::new(NodeKind::Rectangle, Symbol::EMPTY)
+                .with_transform(ude_core::Affine::translate(100.0, 50.0))
+                .with_size(20.0, 10.0)
+                .with_fills(fill),
+        ]);
         let rect = doc.children(page)[0];
         let (w, h, px) = render_to_rgba(&doc, rect, 2.0, &mut RenderCaches::default()).unwrap();
-        assert_eq!((w, h), (40, 20), "layer bounds at 2x, positioned at the origin");
+        assert_eq!(
+            (w, h),
+            (40, 20),
+            "layer bounds at 2x, positioned at the origin"
+        );
         let p = &px[(10 * 40 + 20) * 4..][..4];
-        assert!(p[3].abs_diff(128) <= 1 && p[0].abs_diff(10) <= 2, "straight (not premultiplied) RGBA: {p:?}");
+        assert!(
+            p[3].abs_diff(128) <= 1 && p[0].abs_diff(10) <= 2,
+            "straight (not premultiplied) RGBA: {p:?}"
+        );
         let png = export_png(&doc, page, 1.0, &mut RenderCaches::default()).unwrap();
         assert_eq!(&png[1..4], b"PNG");
     }

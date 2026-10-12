@@ -124,6 +124,34 @@ impl TextEngine {
         &self.cache[&key]
     }
 
+    /// Laid-out lines as (text, x offset, baseline y) in box coordinates, including vertical
+    /// alignment: what an exporter needs to reproduce wrapping and alignment exactly.
+    pub fn lines(
+        &mut self,
+        text: &TextData,
+        strings: &Interner,
+        box_size: (f32, f32),
+    ) -> Vec<(String, f32, f32)> {
+        let layout = self.layout(text, strings, box_size.0);
+        let dy = match text.align_v {
+            typography::TextAlignV::Top => 0.0,
+            typography::TextAlignV::Center => (box_size.1 - layout.height()) / 2.0,
+            typography::TextAlignV::Bottom => box_size.1 - layout.height(),
+        };
+        layout
+            .lines()
+            .map(|line| {
+                let m = line.metrics();
+                let s = text.content.get(line.text_range()).unwrap_or_default();
+                (
+                    s.trim_end_matches(['\n', '\r']).to_owned(),
+                    m.offset,
+                    m.baseline + dy,
+                )
+            })
+            .collect()
+    }
+
     /// Draws `text` in its `box_size` box with `transform` (local → device).
     pub fn draw(
         &mut self,

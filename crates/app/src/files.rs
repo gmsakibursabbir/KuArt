@@ -6,7 +6,7 @@ use ude_core::{Document, NodeKind};
 
 use crate::App;
 
-const OPENABLE: &[&str] = &["design", "png", "jpg", "jpeg", "webp"];
+const OPENABLE: &[&str] = &["design", "svg", "png", "jpg", "jpeg", "webp"];
 
 /// Loads a `.design` document or imports an image.
 pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
@@ -20,6 +20,15 @@ pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
         "png" | "jpg" | "jpeg" | "webp" => {
             let bytes = std::fs::read(path).map_err(|e| err(&e))?;
             ude_format_raster::import(bytes, &file_name(path)).map_err(|e| err(&e))
+        }
+        "svg" => {
+            let bytes = std::fs::read(path).map_err(|e| err(&e))?;
+            let im =
+                ude_format_svg_import::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
         }
         _ => ude_format_native::load_from_path(path, &ude_format_native::Limits::default())
             .map_err(|e| err(&e)),
@@ -108,7 +117,11 @@ impl App {
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("svg"));
         let bytes = if svg {
-            ude_format_svg::export(&self.doc, target).map(String::into_bytes)
+            let (doc, text) = (&self.doc, &mut self.caches.text);
+            ude_format_svg::export_with(doc, target, &mut |t, size| {
+                text.lines(t, &doc.strings, size)
+            })
+            .map(String::into_bytes)
         } else {
             // 2x for crisp results on high-DPI screens.
             ude_renderer::export_png(&self.doc, target, 2.0, &mut self.caches)

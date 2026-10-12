@@ -15,13 +15,25 @@ use ude_core::styles::{
 use ude_core::typography::TextData;
 use ude_core::{Affine, Document, FillRule, Node, NodeId, NodeKind, Rect};
 
+/// Text lines as (text, x offset, baseline y) in the text box; see [`export_with`].
+pub type LineLayout<'a> = &'a mut dyn FnMut(&TextData, (f32, f32)) -> Vec<(String, f32, f32)>;
+
+/// Exports with simple line handling (explicit line breaks only, estimated baselines).
+/// Prefer [`export_with`] and the renderer's text layout for exact wrapping.
 pub fn export(doc: &Document, id: NodeId) -> Result<String, String> {
+    export_with(doc, id, &mut simple_lines)
+}
+
+/// Exports with `lines` providing each text box's laid-out lines, so wrapping and
+/// alignment match the canvas exactly.
+pub fn export_with(doc: &Document, id: NodeId, lines: LineLayout<'_>) -> Result<String, String> {
     let bounds = bounds(doc, id).ok_or("nothing to export (empty layer)")?;
     let mut w = Writer {
         doc,
         defs: String::new(),
         body: String::new(),
         next_id: 0,
+        lines,
     };
     let is_page = doc
         .node(id)
@@ -70,11 +82,34 @@ fn bounds(doc: &Document, id: NodeId) -> Option<Rect> {
         .reduce(|a, b| a.union(&b))
 }
 
+fn simple_lines(t: &TextData, _box: (f32, f32)) -> Vec<(String, f32, f32)> {
+    let Some(style) = t.styles.first() else {
+        return Vec::new();
+    };
+    let line_h = match style.line_height {
+        ude_core::typography::LineHeight::Px(px) => px,
+        ude_core::typography::LineHeight::Percent(p) => style.size * p / 100.0,
+        ude_core::typography::LineHeight::Auto => style.size * 1.2,
+    };
+    t.content
+        .split('\n')
+        .enumerate()
+        .map(|(i, line)| {
+            (
+                line.to_owned(),
+                0.0,
+                (line_h - style.size) / 2.0 + style.size * 0.8 + i as f32 * line_h,
+            )
+        })
+        .collect()
+}
+
 struct Writer<'a> {
     doc: &'a Document,
     defs: String,
     body: String,
     next_id: u32,
+    lines: LineLayout<'a>,
 }
 
 impl Writer<'_> {
@@ -156,7 +191,7 @@ impl Writer<'_> {
 
     fn own_content(&mut self, n: &Node) {
         match &n.kind {
-            NodeKind::Text(t) => self.text(t),
+            NodeKind::Text(t) => self.text(t, (n.size.w, n.size.h)),
             NodeKind::Raster { asset } => {
                 if let Some(href) = data_uri(self.doc, *asset) {
                     let _ = write!(
@@ -273,7 +308,7 @@ impl Writer<'_> {
         Some(id)
     }
 
-    fn text(&mut self, t: &TextData) {
+    fn text(&mut self, t: &TextData, size: (f32, f32)) {
         let Some(style) = t.styles.first() else {
             return;
         };
@@ -287,15 +322,11 @@ impl Writer<'_> {
             })
             .unwrap_or(Color::BLACK);
         let family = self.doc.strings.resolve(style.family);
-        let line_h = match style.line_height {
-            ude_core::typography::LineHeight::Px(px) => px,
-            ude_core::typography::LineHeight::Percent(p) => style.size * p / 100.0,
-            ude_core::typography::LineHeight::Auto => style.size * 1.2,
-        };
         let _ = write!(
             self.body,
             "<text font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\"{} fill=\"{}\"{}>",
-            escape(family),
+            // Same generic fallback as the canvas when the named font is not installed.
+            escape(&format!("{family}, sans-serif")),
             num(style.size),
             style.weight,
             if style.italic {
@@ -306,13 +337,13 @@ impl Writer<'_> {
             color(fill),
             opacity_attr("fill-opacity", fill.a)
         );
-        for (i, line) in t.content.split('\n').enumerate() {
-            let y = (line_h - style.size) / 2.0 + style.size * 0.8 + i as f32 * line_h;
+        for (line, x, y) in (self.lines)(t, size) {
             let _ = write!(
                 self.body,
-                "<tspan x=\"0\" y=\"{}\">{}</tspan>",
+                "<tspan x=\"{}\" y=\"{}\" xml:space=\"preserve\">{}</tspan>",
+                num(x),
                 num(y),
-                escape(line)
+                escape(&line)
             );
         }
         self.body.push_str("</text>");
@@ -592,6 +623,10 @@ mod tests {
             "frame clips its children"
         );
         assert!(svg.contains(">A &lt; B</tspan>"), "text is escaped");
+        assert!(
+            svg.contains("font-family=\"Inter, sans-serif\""),
+            "generic fallback"
+        );
         assert!(svg.contains("font-weight=\"600\""));
         assert!(svg.contains("<ellipse cx=\"5\" cy=\"5\" rx=\"5\" ry=\"5\" fill=\"#ff0000\"/>"));
         assert!(svg.ends_with("</svg>\n"));
