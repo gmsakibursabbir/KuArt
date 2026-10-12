@@ -35,6 +35,12 @@ pub struct Gpu {
     renderer: Renderer,
     scene: Scene,
     adapter: String,
+    /// The interface: drawn by egui's software renderer into `ui_pixels`, uploaded to
+    /// `ui_texture` and alpha-blended over the canvas.
+    egui: EguiSoftwareRender,
+    ui_pixels: Vec<[u8; 4]>,
+    ui_texture: Option<(wgpu::Texture, wgpu::TextureView, u32, u32)>,
+    ui_blitter: wgpu::util::TextureBlitter,
 }
 
 pub struct Cpu {
@@ -83,7 +89,7 @@ impl Backend {
 
     pub fn name(&self) -> String {
         match self {
-            Backend::Gpu(g) => format!("GPU · {}", g.adapter),
+            Backend::Gpu(g) => format!("GPU renderer · {}", g.adapter),
             Backend::Cpu(_) => "CPU renderer".to_owned(),
         }
     }
@@ -127,7 +133,7 @@ impl Backend {
     ) -> Result<FrameResult, String> {
         match self {
             // The GPU path has no egui renderer yet (egui-wgpu targets a different wgpu than vello).
-            Backend::Gpu(g) => g.render(doc, page, view, overlay, bg, caches),
+            Backend::Gpu(g) => g.render(doc, page, view, overlay, bg, ui, caches),
             Backend::Cpu(c) => c.render(doc, page, view, overlay, bg, ui, caches),
         }
     }
@@ -155,15 +161,82 @@ impl Gpu {
             },
         )
         .map_err(|e| e.to_string())?;
+        // Software adapters (WARP, llvmpipe) are slower than our CPU renderer.
+        if info.device_type == wgpu::DeviceType::Cpu {
+            return Err(format!("{} is a software adapter", info.name));
+        }
+        // egui colours are premultiplied.
+        let ui_blitter =
+            wgpu::util::TextureBlitterBuilder::new(&device.device, surface.config.format)
+                .blend_state(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING)
+                .build();
         Ok(Self {
-            adapter: format!("{} ({:?})", info.name, info.backend),
+            adapter: info.name.clone(),
             context,
             surface,
             renderer,
             scene: Scene::new(),
+            egui: EguiSoftwareRender::new(ColorFieldOrder::Rgba),
+            ui_pixels: Vec::new(),
+            ui_texture: None,
+            ui_blitter,
         })
     }
 
+    /// Draws the interface into the UI texture (recreated when the window size changes).
+    fn upload_ui(&mut self, ui: &UiFrame<'_>, width: u32, height: u32) {
+        let device = &self.context.devices[self.surface.dev_id];
+        let (w, h) = (width as usize, height as usize);
+        self.ui_pixels.clear();
+        self.ui_pixels.resize(w * h, [0, 0, 0, 0]);
+        self.egui.render(
+            &mut BufferMutRef::new(&mut self.ui_pixels, w, h),
+            ui.jobs,
+            ui.textures,
+            ui.pixels_per_point,
+        );
+        if !matches!(&self.ui_texture, Some((_, _, tw, th)) if *tw == width && *th == height) {
+            let texture = device.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("ui"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.ui_texture = Some((texture, view, width, height));
+        }
+        if let Some((texture, ..)) = &self.ui_texture {
+            device.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(&self.ui_pixels),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * width),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn render(
         &mut self,
         doc: &Document,
@@ -171,13 +244,17 @@ impl Gpu {
         view: &View,
         overlay: &Overlay,
         bg: Color,
+        ui: Option<&UiFrame<'_>>,
         caches: &mut RenderCaches,
     ) -> Result<FrameResult, String> {
+        let (width, height) = (self.surface.config.width, self.surface.config.height);
+        if let Some(ui) = ui {
+            self.upload_ui(ui, width, height);
+        }
         self.scene.reset();
         let stats = paint_page(doc, page, view, &mut self.scene, caches);
         paint_overlay(overlay, &mut self.scene);
         let device = &self.context.devices[self.surface.dev_id];
-        let (width, height) = (self.surface.config.width, self.surface.config.height);
         self.renderer
             .render_to_texture(
                 &device.device,
@@ -217,6 +294,12 @@ impl Gpu {
             &self.surface.target_view,
             &target,
         );
+        if ui.is_some()
+            && let Some((_, view, ..)) = &self.ui_texture
+        {
+            self.ui_blitter
+                .copy(&device.device, &mut encoder, view, &target);
+        }
         device.queue.submit([encoder.finish()]);
         device.queue.present(frame);
         Ok(FrameResult::Presented(stats))

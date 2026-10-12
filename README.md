@@ -157,8 +157,9 @@ cargo run --release -p ude-app -- file.fig     # open a file
 cargo test --workspace                         # tests
 ```
 
-The CPU renderer is the default because it uses the least memory. Pass `--gpu` to opt into the
-GPU renderer (wgpu + vello). Release packages are built by
+KuArt renders the canvas on the GPU (wgpu + vello) when it finds a hardware GPU, and on the CPU
+otherwise. Pass `--cpu` (or set `UDE_RENDERER=cpu`) for the CPU renderer, which uses far less
+memory (about 35 MB instead of several hundred). Release packages are built by
 [`.github/workflows/release.yml`](.github/workflows/release.yml); see
 [docs/distribution.md](docs/distribution.md).
 

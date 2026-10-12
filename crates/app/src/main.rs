@@ -1,7 +1,8 @@
 //! KuArt desktop application (`design-editor`).
 //!
-//! Canvas with pan/zoom. Event-driven: no frames are rendered while idle. The CPU renderer is
-//! the default; `--gpu` (or `UDE_RENDERER=gpu`) opts into vello on wgpu, see docs/perf-log.md.
+//! Canvas with pan/zoom. Event-driven: no frames are rendered while idle. A detected GPU renders
+//! the canvas (vello on wgpu); without one, or with `--cpu` (UDE_RENDERER=cpu), the CPU renderer
+//! does. See docs/perf-log.md.
 //!
 //! Controls: wheel = pan (Shift = horizontal), Ctrl+wheel / pinch = zoom at cursor,
 //! middle-drag or Space+drag = pan, Shift+1 = zoom to fit, Shift+0 / Ctrl+0 = 100%,
@@ -77,7 +78,8 @@ struct Options {
 fn parse_args() -> Result<Options, String> {
     let mut o = Options {
         file: None,
-        use_gpu: std::env::var("UDE_RENDERER").is_ok_and(|v| v.eq_ignore_ascii_case("gpu")),
+        // The GPU is used when one is detected; `--cpu` or UDE_RENDERER=cpu forces the CPU.
+        use_gpu: !std::env::var("UDE_RENDERER").is_ok_and(|v| v.eq_ignore_ascii_case("cpu")),
         stats: false,
         demo: None,
     };
