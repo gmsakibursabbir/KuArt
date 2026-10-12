@@ -60,6 +60,8 @@ pub fn build_overlay(
         scale,
         accent: None,
         pins: Vec::new(),
+        caret: None,
+        text_selection: Vec::new(),
     }
 }
 

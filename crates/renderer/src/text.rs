@@ -281,6 +281,160 @@ impl TextEngine {
     }
 }
 
+/// Caret and selection inside a text layer being edited (byte offsets into the content).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextSelection(parley::Selection);
+
+impl TextSelection {
+    /// Byte range of the selected text (empty for a caret).
+    pub fn range(&self) -> std::ops::Range<usize> {
+        self.0.text_range()
+    }
+    pub fn is_caret(&self) -> bool {
+        self.0.is_collapsed()
+    }
+    /// Byte offset of the moving end.
+    pub fn focus(&self) -> usize {
+        self.0.focus().index()
+    }
+}
+
+/// Caret line (x, y0, y1) and selection rectangles [x0, y0, x1, y1], in box coordinates.
+pub type SelectionGeometry = (Option<(f32, f32, f32)>, Vec<[f32; 4]>);
+
+/// Caret movements for editing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaretMove {
+    Left,
+    Right,
+    WordLeft,
+    WordRight,
+    Up,
+    Down,
+    LineStart,
+    LineEnd,
+}
+
+impl TextEngine {
+    /// Vertical offset of the laid-out text inside its box (vertical alignment).
+    fn dy(text: &TextData, layout: &Layout<u16>, box_size: (f32, f32)) -> f32 {
+        match text.align_v {
+            typography::TextAlignV::Top => 0.0,
+            typography::TextAlignV::Center => (box_size.1 - layout.height()) / 2.0,
+            typography::TextAlignV::Bottom => box_size.1 - layout.height(),
+        }
+    }
+
+    /// Caret at `point` (box coordinates).
+    pub fn select_at(
+        &mut self,
+        text: &TextData,
+        strings: &Interner,
+        box_size: (f32, f32),
+        point: (f32, f32),
+    ) -> TextSelection {
+        let layout = self.layout(text, strings, box_size.0);
+        let dy = Self::dy(text, layout, box_size);
+        TextSelection(parley::Selection::from_point(layout, point.0, point.1 - dy))
+    }
+
+    /// Extends `sel` to `point` (drag selection).
+    pub fn extend_to(
+        &mut self,
+        text: &TextData,
+        strings: &Interner,
+        box_size: (f32, f32),
+        sel: TextSelection,
+        point: (f32, f32),
+    ) -> TextSelection {
+        let layout = self.layout(text, strings, box_size.0);
+        let dy = Self::dy(text, layout, box_size);
+        TextSelection(sel.0.extend_to_point(layout, point.0, point.1 - dy))
+    }
+
+    /// Selection from byte offsets (after an edit), clamped to the content.
+    pub fn select_range(
+        &mut self,
+        text: &TextData,
+        strings: &Interner,
+        box_size: (f32, f32),
+        anchor: usize,
+        focus: usize,
+    ) -> TextSelection {
+        let len = text.content.len();
+        let layout = self.layout(text, strings, box_size.0);
+        let a =
+            parley::Cursor::from_byte_index(layout, anchor.min(len), parley::Affinity::Downstream);
+        let f =
+            parley::Cursor::from_byte_index(layout, focus.min(len), parley::Affinity::Downstream);
+        TextSelection(parley::Selection::new(a, f))
+    }
+
+    pub fn move_caret(
+        &mut self,
+        text: &TextData,
+        strings: &Interner,
+        box_size: (f32, f32),
+        sel: TextSelection,
+        how: CaretMove,
+        extend: bool,
+    ) -> TextSelection {
+        let layout = self.layout(text, strings, box_size.0);
+        let s = sel.0;
+        // Without Shift, Left/Right on a range collapse it to the matching edge.
+        if !extend && !s.is_collapsed() && matches!(how, CaretMove::Left | CaretMove::Right) {
+            let r = s.text_range();
+            let at = if how == CaretMove::Left {
+                r.start
+            } else {
+                r.end
+            };
+            let c = parley::Cursor::from_byte_index(layout, at, parley::Affinity::Downstream);
+            return TextSelection(parley::Selection::new(c, c));
+        }
+        TextSelection(match how {
+            CaretMove::Left => s.previous_visual(layout, extend),
+            CaretMove::Right => s.next_visual(layout, extend),
+            CaretMove::WordLeft => s.previous_visual_word(layout, extend),
+            CaretMove::WordRight => s.next_visual_word(layout, extend),
+            CaretMove::Up => s.previous_line(layout, extend),
+            CaretMove::Down => s.next_line(layout, extend),
+            CaretMove::LineStart => s.line_start(layout, extend),
+            CaretMove::LineEnd => s.line_end(layout, extend),
+        })
+    }
+
+    /// Caret line (x, y0, y1) and selection rectangles [x0, y0, x1, y1], in box coordinates.
+    pub fn selection_geometry(
+        &mut self,
+        text: &TextData,
+        strings: &Interner,
+        box_size: (f32, f32),
+        sel: TextSelection,
+    ) -> SelectionGeometry {
+        let layout = self.layout(text, strings, box_size.0);
+        let dy = f64::from(Self::dy(text, layout, box_size));
+        let rects = sel
+            .0
+            .geometry(layout)
+            .into_iter()
+            .map(|(b, _)| {
+                [
+                    b.x0 as f32,
+                    (b.y0 + dy) as f32,
+                    b.x1 as f32,
+                    (b.y1 + dy) as f32,
+                ]
+            })
+            .collect();
+        let caret = sel.0.is_collapsed().then(|| {
+            let b = sel.0.focus().geometry(layout, 1.0);
+            (b.x0 as f32, (b.y0 + dy) as f32, (b.y1 + dy) as f32)
+        });
+        (caret, rects)
+    }
+}
+
 fn layout_key(text: &TextData, strings: &Interner, width: f32) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.content.hash(&mut h);

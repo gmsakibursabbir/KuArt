@@ -52,12 +52,21 @@ impl App {
     /// Ends creation: default size for a click, then back to the Move tool.
     pub(crate) fn finish_create(&mut self) {
         let pointer = self.doc_point(self.cursor);
+        let new_text = match &self.drag {
+            Some(Drag::Create(c)) if self.tool == Tool::Text => Some(c.id),
+            _ => None,
+        };
         if let Some(Drag::Create(c)) = &self.drag
             && let Err(e) = c.finish(&mut self.doc, &mut self.history, pointer)
         {
             eprintln!("create failed: {e}");
         }
         self.tool = Tool::Move;
+        // A new text layer is typed into straight away.
+        if let Some(id) = new_text {
+            self.drag = None;
+            self.begin_text_edit(id, true);
+        }
     }
 
     /// Applies a text edit from the inspector as one undoable step per edit session.

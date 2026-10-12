@@ -27,6 +27,7 @@ mod recents;
 mod selection_ui;
 mod settings;
 mod tabs;
+mod text_edit;
 mod tools;
 
 use std::path::PathBuf;
@@ -173,6 +174,8 @@ struct App {
     doc_id: u64,
     last_input: Instant,
     last_autosave: Instant,
+    /// Text layer being edited on the canvas.
+    editing: Option<text_edit::Editing>,
 }
 
 enum Drag {
@@ -246,6 +249,7 @@ impl App {
             doc_id: autosave::new_id(),
             last_input: Instant::now(),
             last_autosave: Instant::now(),
+            editing: None,
             index,
             selection: Selection::default(),
             hover: None,
@@ -554,6 +558,9 @@ impl App {
         self.selection_box = overlay.selection_box.map(|o| o.quad);
         let [ar, ag, ab, _] = self.panels.theme.tokens(system_dark).accent.to_array();
         overlay.accent = Some(Color::from_rgba8(ar, ag, ab, 255));
+        let (caret, text_selection) = self.text_overlay(view.transform);
+        overlay.caret = caret;
+        overlay.text_selection = text_selection;
         let page_index = self.page_index();
         overlay.pins = self
             .doc
@@ -624,6 +631,9 @@ impl App {
     }
 
     fn on_key(&mut self, event: &KeyEvent) {
+        if self.editing.is_some() && self.text_key(event) {
+            return;
+        }
         let PhysicalKey::Code(code) = event.physical_key else {
             return;
         };
@@ -676,6 +686,15 @@ impl App {
         match code {
             KeyCode::KeyO if ctrl => self.open_dialog(),
             KeyCode::KeyN if ctrl => self.new_document(),
+            KeyCode::Enter | KeyCode::NumpadEnter
+                if matches!(
+                    self.selection.ids(),
+                    [id] if matches!(self.doc.node(*id).map(|n| &n.kind), Some(NodeKind::Text(_)))
+                ) =>
+            {
+                let id = self.selection.ids()[0];
+                self.begin_text_edit(id, true);
+            }
             KeyCode::KeyW if ctrl => {
                 if let Some(i) = self.active_tab.filter(|_| !self.home) {
                     self.close_tab(i);
@@ -932,6 +951,9 @@ impl App {
 
     fn on_left_press(&mut self) {
         self.nudge_key = None;
+        if self.editing.is_some() && self.text_press() {
+            return;
+        }
         if self.tool != Tool::Move {
             return self.begin_create();
         }
@@ -946,6 +968,19 @@ impl App {
         });
         self.last_click = Some((now, self.cursor));
 
+        // Double-click on a selected text layer edits it on the canvas.
+        if double
+            && let [current] = self.selection.ids()
+            && self.target_at(self.cursor, SelectionMode::Deep) == Some(*current)
+            && matches!(
+                self.doc.node(*current).map(|n| &n.kind),
+                Some(NodeKind::Text(_))
+            )
+        {
+            let id = *current;
+            self.begin_text_edit(id, false);
+            return;
+        }
         // Double-click on a selected container drills one level towards the pointer.
         if double
             && let [current] = self.selection.ids()
@@ -990,6 +1025,7 @@ impl App {
     }
 
     fn on_left_release(&mut self) {
+        self.text_release();
         if self.marquee.take().is_some() {
             self.redraw();
         }
@@ -1003,6 +1039,9 @@ impl App {
     }
 
     fn on_cursor_moved(&mut self, delta: Vec2) {
+        if self.text_drag() {
+            return;
+        }
         if self.panning {
             self.camera.pan += delta;
             self.redraw();
@@ -1163,8 +1202,15 @@ impl ApplicationHandler<AppEvent> for App {
         }
         let mut egui_consumed = false;
         // egui-winit asks for a repaint on RedrawRequested itself, which would redraw forever.
+        // While text is edited on the canvas, keystrokes belong to it, not to egui.
+        let canvas_typing = self.editing.is_some()
+            && matches!(
+                event,
+                WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_)
+            );
         if let (Some(state), Some(window)) = (self.egui_state.as_mut(), self.window.as_ref())
             && !matches!(event, WindowEvent::RedrawRequested)
+            && !canvas_typing
         {
             let r = state.on_window_event(window, &event);
             if r.repaint {
@@ -1198,6 +1244,11 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::DroppedFile(path) => self.dropped(path),
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) if !egui_consumed => {
+                if self.editing.is_some() {
+                    self.text_insert(&text);
+                }
+            }
             WindowEvent::CloseRequested => {
                 if self.close_all() {
                     event_loop.exit();

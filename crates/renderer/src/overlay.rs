@@ -34,6 +34,9 @@ pub struct Overlay {
     pub accent: Option<Color>,
     /// Comment pins (device space): position and whether the comment is resolved.
     pub pins: Vec<(Point, bool)>,
+    /// Text being edited: caret segment and selection quads (device space).
+    pub caret: Option<(Point, Point)>,
+    pub text_selection: Vec<[Point; 4]>,
 }
 
 impl Overlay {
@@ -44,6 +47,8 @@ impl Overlay {
             && self.marquee.is_none()
             && self.guides.is_empty()
             && self.pins.is_empty()
+            && self.caret.is_none()
+            && self.text_selection.is_empty()
     }
 }
 
@@ -51,6 +56,33 @@ pub fn paint_overlay(o: &Overlay, p: &mut impl Painter) {
     let scale = if o.scale > 0.0 { o.scale } else { 1.0 };
     let line = scale;
     let accent = o.accent.unwrap_or(ACCENT);
+    for q in &o.text_selection {
+        let mut path = BezPath::new();
+        path.move_to(q[0]);
+        for &pt in &q[1..] {
+            path.line_to(pt);
+        }
+        path.close_path();
+        let fill = BrushSpec::Solid(accent.multiply_alpha(0.35));
+        p.fill(
+            Affine::IDENTITY,
+            &Geom::Path(&path),
+            Fill::NonZero,
+            &fill,
+            None,
+        );
+    }
+    if let Some((a, b)) = o.caret {
+        let mut path = BezPath::new();
+        path.move_to(a);
+        path.line_to(b);
+        p.stroke(
+            Affine::IDENTITY,
+            &Geom::Path(&path),
+            1.5 * scale,
+            &BrushSpec::Solid(accent),
+        );
+    }
     for &(at, resolved) in &o.pins {
         // Speech-bubble pin: circle above the point with a white rim.
         let r = 9.0 * scale;

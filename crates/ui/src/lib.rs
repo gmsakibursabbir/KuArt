@@ -457,7 +457,7 @@ impl Panels {
         let menu = |label: &str| RichText::new(label).size(12.5).color(t.text_secondary);
 
         ui.menu_button(menu("File"), |ui| {
-            ui.set_min_width(240.0);
+            ui.set_width(220.0);
             menu_item(ui, "New design", "Ctrl+N", actions, Action::New);
             menu_item(ui, "Open…", "Ctrl+O", actions, Action::Open);
             menu_item(ui, "Import…", "", actions, Action::Import);
@@ -486,7 +486,7 @@ impl Panels {
             menu_item(ui, "Back to files", "", actions, Action::Home);
         });
         ui.menu_button(menu("Edit"), |ui| {
-            ui.set_min_width(240.0);
+            ui.set_width(220.0);
             menu_item(ui, "Undo", "Ctrl+Z", actions, Action::Undo);
             menu_item(ui, "Redo", "Ctrl+Y", actions, Action::Redo);
             ui.separator();
@@ -511,7 +511,7 @@ impl Panels {
             );
         });
         ui.menu_button(menu("View"), |ui| {
-            ui.set_min_width(240.0);
+            ui.set_width(220.0);
             menu_item(ui, "Zoom in", "Ctrl+=", actions, Action::ZoomIn);
             menu_item(ui, "Zoom out", "Ctrl+-", actions, Action::ZoomOut);
             menu_item(ui, "Zoom to fit", "Shift+1", actions, Action::ZoomToFit);
@@ -531,7 +531,7 @@ impl Panels {
             }
         });
         ui.menu_button(menu("Object"), |ui| {
-            ui.set_min_width(240.0);
+            ui.set_width(220.0);
             menu_item(ui, "Group", "Ctrl+G", actions, Action::Edit(Edit::Group));
             menu_item(
                 ui,
@@ -595,7 +595,7 @@ impl Panels {
             });
         });
         ui.menu_button(menu("Help"), |ui| {
-            ui.set_min_width(260.0);
+            ui.set_width(250.0);
             ui.label(RichText::new(concat!("KuArt ", env!("CARGO_PKG_VERSION"))).strong());
             ui.label(
                 RichText::new("Native, offline design editor")
@@ -661,23 +661,15 @@ impl Panels {
     }
 }
 
+/// Menu entry: label on the left, shortcut on the right, full menu width (like desktop menus).
 fn menu_item(ui: &mut Ui, label: &str, shortcut: &str, actions: &mut Vec<Action>, action: Action) {
-    let clicked = ui
-        .horizontal(|ui| {
-            let r = ui.add(
-                egui::Button::new(label)
-                    .frame(false)
-                    .min_size(egui::vec2(170.0, 0.0)),
-            );
-            if !shortcut.is_empty() {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new(shortcut).size(11.0).weak());
-                });
-            }
-            r.clicked()
-        })
-        .inner;
-    if clicked {
+    let mut button = egui::Button::new(label)
+        .frame(false)
+        .min_size(egui::vec2(ui.available_width(), 24.0));
+    if !shortcut.is_empty() {
+        button = button.shortcut_text(RichText::new(shortcut).size(11.0).weak());
+    }
+    if ui.add(button).clicked() {
         actions.push(action);
         ui.close();
     }

@@ -19,7 +19,7 @@ pub mod text;
 pub use images::{DecodedImage, ImageCache};
 pub use overlay::{Outline, Overlay, paint_overlay};
 pub use painter::{BrushSpec, CpuPainter, Geom, GlyphPos, Painter};
-pub use text::TextEngine;
+pub use text::{CaretMove, TextEngine, TextSelection};
 
 /// Per-window caches the traversal needs: text layouts and decoded images.
 #[derive(Default)]
@@ -1171,6 +1171,56 @@ mod tests {
         assert_eq!(
             image::guess_format(&webp).unwrap(),
             image::ImageFormat::WebP
+        );
+    }
+}
+
+#[cfg(test)]
+mod text_edit_tests {
+    use super::*;
+    use ude_core::styles::{Color, Paint};
+    use ude_core::typography::{
+        LetterSpacing, LineHeight, TextCase, TextData, TextDecoration, TextStyle,
+    };
+    use ude_core::{Interner, Paints};
+
+    #[test]
+    fn caret_hit_test_and_movement() {
+        let mut strings = Interner::default();
+        let style = TextStyle {
+            family: strings.intern("sans-serif"),
+            weight: 400,
+            italic: false,
+            size: 20.0,
+            line_height: LineHeight::Auto,
+            letter_spacing: LetterSpacing::Normal,
+            decoration: TextDecoration::None,
+            case: TextCase::Original,
+            fills: Paints::new(vec![Paint::solid(Color::BLACK)]),
+        };
+        let text = TextData::plain("Hello world", style);
+        let mut e = TextEngine::default();
+        let size = e.measure(&text, &strings, f32::INFINITY);
+        let size = (size.0, size.1);
+        // Far right of the box: caret after the last character.
+        let end = e.select_at(&text, &strings, size, (size.0 + 50.0, 5.0));
+        assert_eq!(end.focus(), 11);
+        let start = e.select_at(&text, &strings, size, (-5.0, 5.0));
+        assert_eq!(start.focus(), 0);
+        let word = e.move_caret(&text, &strings, size, start, CaretMove::WordRight, true);
+        assert!(
+            word.range().end >= 5 && !word.is_caret(),
+            "{:?}",
+            word.range()
+        );
+        let all = e.select_range(&text, &strings, size, 0, 11);
+        let (caret, rects) = e.selection_geometry(&text, &strings, size, all);
+        assert!(caret.is_none() && !rects.is_empty());
+        let one = e.move_caret(&text, &strings, size, all, CaretMove::Left, false);
+        assert_eq!(
+            (one.focus(), one.is_caret()),
+            (0, true),
+            "Left collapses to the start"
         );
     }
 }

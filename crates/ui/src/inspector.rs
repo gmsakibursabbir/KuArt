@@ -540,7 +540,11 @@ impl Inspector {
             ui,
             t,
             "Text",
-            |_| {},
+            |ui| {
+                if icon_button_sized(ui, t, icons::COPY, "Copy text", false, 22.0, 12.0).clicked() {
+                    ui.ctx().copy_text(text.content.to_string());
+                }
+            },
             |ui| {
                 kc = self.edited(
                     &ui.add(

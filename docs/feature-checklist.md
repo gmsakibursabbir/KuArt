@@ -99,7 +99,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 
 ## D. Typography and text
 - ✓ Point text and area text (auto width, auto height, fixed)
-- ✗ Text editing on canvas (inspector only)
+- ✓ Text editing on canvas (caret, mouse and keyboard selection, word/line navigation, clipboard, IME)
 - ✓ Font family, weight and style
 - ~ Font size and line height (size editable; line height imported)
 - ~ Letter spacing and paragraph spacing (imported and drawn)

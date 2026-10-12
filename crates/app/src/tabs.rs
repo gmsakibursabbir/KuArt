@@ -66,6 +66,7 @@ impl App {
     fn after_switch(&mut self) {
         self.hover = None;
         self.drag = None;
+        self.end_text_edit();
         self.clipboard = ude_editor::Clipboard::default();
         self.caches.images = ude_renderer::images::ImageCache::default();
         if let Some(b) = &mut self.backend {
