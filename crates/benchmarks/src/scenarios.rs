@@ -55,6 +55,7 @@ impl Canvas {
             &mut CpuPainter {
                 cx: &mut self.cx,
                 resources: &mut self.resources,
+                filters: false,
             },
             caches,
         );

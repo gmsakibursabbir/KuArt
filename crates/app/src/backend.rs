@@ -47,6 +47,8 @@ pub struct Cpu {
     /// Content + overlays, the frame actually presented.
     frame: vello_cpu::Pixmap,
     overlay_cx: vello_cpu::RenderContext,
+    /// Single-threaded context for pages with blur (filters need it); made on demand.
+    filter_cx: Option<vello_cpu::RenderContext>,
     resources: vello_cpu::Resources,
     egui: EguiSoftwareRender,
 }
@@ -104,6 +106,7 @@ impl Backend {
                 let (cw, ch) = (clamp_u16(w), clamp_u16(h));
                 c.cx = vello_cpu::RenderContext::new(cw, ch);
                 c.overlay_cx = vello_cpu::RenderContext::new(cw, ch);
+                c.filter_cx = None;
                 c.content = vello_cpu::Pixmap::new(cw, ch);
                 c.frame = vello_cpu::Pixmap::new(cw, ch);
                 c.content_key = None;
@@ -238,6 +241,7 @@ impl Cpu {
             content_stats: FrameStats::default(),
             frame: vello_cpu::Pixmap::new(cw, ch),
             overlay_cx: vello_cpu::RenderContext::new(cw, ch),
+            filter_cx: None,
             resources: vello_cpu::Resources::new(),
             egui: EguiSoftwareRender::new(ColorFieldOrder::Bgra),
         })
@@ -262,24 +266,32 @@ impl Cpu {
             size: (self.cx.width(), self.cx.height()),
         };
         if self.content_key != Some(key) {
-            self.cx.reset();
+            let filters = caches.page_has_blur(doc, page);
+            let (w, h) = (self.cx.width(), self.cx.height());
+            let cx = if filters {
+                self.filter_cx
+                    .get_or_insert_with(|| ude_renderer::filter_context(w, h))
+            } else {
+                &mut self.cx
+            };
+            cx.reset();
             self.content_stats = paint_page(
                 doc,
                 page,
                 view,
                 &mut CpuPainter {
-                    cx: &mut self.cx,
+                    cx,
                     resources: &mut self.resources,
+                    filters,
                 },
                 caches,
             );
-            self.cx.flush();
+            cx.flush();
             let settings = RasterizerSettings {
                 target_init: TargetInit::Clear(bg),
                 ..Default::default()
             };
-            self.cx
-                .render_with(&mut self.content, &mut self.resources, settings);
+            cx.render_with(&mut self.content, &mut self.resources, settings);
             self.content_key = Some(key);
         }
 
@@ -296,6 +308,7 @@ impl Cpu {
                 &mut CpuPainter {
                     cx: &mut self.overlay_cx,
                     resources: &mut self.resources,
+                    filters: false,
                 },
             );
             self.overlay_cx.flush();

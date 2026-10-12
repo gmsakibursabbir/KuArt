@@ -359,6 +359,7 @@ pub fn render_frame_ms(nodes: u32) -> (f64, f64, u32) {
             &mut CpuPainter {
                 cx: &mut cx,
                 resources: &mut resources,
+                filters: false,
             },
             &mut caches,
         );

@@ -13,6 +13,7 @@ use crate::widgets::{field_label, icon, icon_button_sized, primary_button, secti
 use crate::{Action, ExportFormat, ExportOptions, icons};
 
 /// Inspector merge keys live in their own range so they never merge with canvas gestures.
+mod effects;
 mod gradient;
 
 const KEY_SPACE: u64 = 1 << 63;
@@ -284,6 +285,7 @@ impl Inspector {
             self.fill_section(ui, t, id, &n.fills, actions);
             self.stroke_section(ui, t, id, n, actions);
         }
+        self.effects_section(ui, t, id, n, actions);
         if let NodeKind::Text(text) = &n.kind {
             self.text_section(ui, doc, id, text, t, actions);
         }

@@ -62,7 +62,7 @@ Priority: **P0** blocks everyday use · **P1** expected by professionals · **P2
 | Colour picker with eyedropper, HEX/RGB/HSL, document colours | ✓ | ~ basic | P0 |
 | Gradient editor (linear, radial, angular, diamond) | ✓ | ✗ (rendered when imported) | P1 |
 | Drop shadow | ✓ | ✓ | — |
-| Inner shadow, layer blur, background blur | ✓ | ✗ (data kept) | P1 |
+| Layer blur · inner shadow, background blur | ✓ | ✓ layer blur (CPU canvas, raster export) · ✗ inner shadow, background blur (data kept) | P1 |
 | Blend modes per layer and per fill | ✓ | ✓ render, ~ edit | P2 |
 | Shared styles (colour, text, effect, grid) | ✓ | ✗ | P1 |
 | Variables / design tokens with modes (light/dark) | ✓ | ~ tokens exported, not edited | P1 |

@@ -18,7 +18,7 @@ pub mod text;
 
 pub use images::{DecodedImage, ImageCache};
 pub use overlay::{Outline, Overlay, paint_overlay};
-pub use painter::{BrushSpec, CpuPainter, Geom, GlyphPos, Painter};
+pub use painter::{BrushSpec, CpuPainter, Geom, GlyphPos, Painter, filter_context};
 pub use text::{CaretMove, TextEngine, TextSelection};
 
 /// Per-window caches the traversal needs: text layouts and decoded images.
@@ -26,11 +26,30 @@ pub use text::{CaretMove, TextEngine, TextSelection};
 pub struct RenderCaches {
     pub text: TextEngine,
     pub images: ImageCache,
+    /// Whether a page has visible layer blur, per (document, revision, page).
+    blur: Option<(usize, u64, NodeId, bool)>,
     /// Boolean group results, keyed by node; recomputed when the document changes.
     booleans: std::collections::HashMap<NodeId, (usize, u64, BezPath)>,
 }
 
 impl RenderCaches {
+    /// True when `page` has a visible layer blur: the CPU canvas then renders with a
+    /// filter-capable (single-threaded) context.
+    pub fn page_has_blur(&mut self, doc: &Document, page: NodeId) -> bool {
+        let key = (std::ptr::from_ref(doc) as usize, doc.revision(), page);
+        if let Some((d, r, p, v)) = self.blur
+            && (d, r, p) == key
+        {
+            return v;
+        }
+        let v = doc.descendants(page).any(|id| {
+            doc.node(id)
+                .is_some_and(|n| n.is_visible() && layer_blur(n).is_some())
+        });
+        self.blur = Some((key.0, key.1, key.2, v));
+        v
+    }
+
     /// Outline of a boolean group in its local coordinates (cached per document revision).
     fn boolean(&mut self, doc: &Document, id: NodeId) -> Option<Shape> {
         let key = (std::ptr::from_ref(doc) as usize, doc.revision());
@@ -150,11 +169,12 @@ pub fn render_to_rgba(
     }
     let (w, h) = (w as u16, h as u16);
     let view = Affine::scale(scale) * Affine::translate((-bounds.x0, -bounds.y0));
-    let mut cx = vello_cpu::RenderContext::new(w, h);
+    let mut cx = painter::filter_context(w, h);
     let mut resources = vello_cpu::Resources::new();
     let mut painter = CpuPainter {
         cx: &mut cx,
         resources: &mut resources,
+        filters: true,
     };
     paint_for_export(
         doc,
@@ -212,6 +232,12 @@ impl<P: Painter> Cx<'_, P> {
             }
         }
 
+        // Layer blur blurs everything the layer draws (design tools: radius ≈ 2σ).
+        let blur = layer_blur(n).is_some_and(|r| {
+            let scale = transform.determinant().abs().sqrt();
+            self.painter.push_blur((f64::from(r) / 2.0 * scale) as f32)
+        });
+
         let blend = convert::blend(n.blend);
         // A layer is needed only when it changes the result.
         let group_opacity = !leaf && n.opacity < 1.0 && n.children.len() > 1;
@@ -262,6 +288,9 @@ impl<P: Painter> Cx<'_, P> {
             self.strokes(n, transform, g, inner_alpha);
         }
         if layer {
+            self.painter.pop_layer();
+        }
+        if blur {
             self.painter.pop_layer();
         }
     }
@@ -487,6 +516,17 @@ impl<P: Painter> Cx<'_, P> {
         }
         self.stats.drawn += 1;
     }
+}
+
+/// Radius of the node's visible layer blur.
+fn layer_blur(n: &Node) -> Option<f32> {
+    n.ext.as_ref()?.effects.iter().find_map(|e| match e {
+        Effect::LayerBlur {
+            radius,
+            visible: true,
+        } if *radius > 0.0 => Some(*radius),
+        _ => None,
+    })
 }
 
 enum ShapeKind {
@@ -870,6 +910,7 @@ mod tests {
             &mut CpuPainter {
                 cx: &mut cx,
                 resources: &mut resources,
+                filters: false,
             },
             &mut RenderCaches::default(),
         );
@@ -877,6 +918,35 @@ mod tests {
         cx.flush();
         cx.render(&mut pixmap, &mut resources);
         (pixmap.data_as_u8_slice().to_vec(), stats)
+    }
+
+    #[test]
+    fn layer_blur_softens_edges_in_exports() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let page = doc
+            .build_child(root, Node::new(NodeKind::Page, Symbol::EMPTY))
+            .unwrap();
+        let mut n = Node::new(NodeKind::Rectangle, Symbol::EMPTY)
+            .with_transform(ude_core::Affine::translate(20.0, 20.0))
+            .with_size(40.0, 40.0)
+            .with_fills(Paints::new(vec![Paint::solid(Color::BLACK)]));
+        n.ext_mut().effects = vec![Effect::LayerBlur {
+            radius: 8.0,
+            visible: true,
+        }]
+        .into();
+        let id = doc.build_child(page, n).unwrap();
+        let mut caches = RenderCaches::default();
+        assert!(caches.page_has_blur(&doc, page));
+        let (w, _, px) = render_to_rgba(&doc, id, 1.0, &mut caches).unwrap();
+        // Export bounds include the blur outset (12): the rect's edge is at x = 12.
+        let alpha = |x: u32, y: u32| px[((y * w + x) * 4 + 3) as usize];
+        let mid = 32;
+        assert!(alpha(mid, mid) > 240, "centre stays solid");
+        let edge = alpha(12, mid);
+        assert!(edge > 40 && edge < 220, "edge is soft: {edge}");
+        assert!(alpha(4, mid) > 0, "blur spreads outside the box");
     }
 
     #[test]
@@ -1157,6 +1227,7 @@ mod tests {
             &mut CpuPainter {
                 cx: &mut cx,
                 resources: &mut resources,
+                filters: false,
             },
         );
         let mut pixmap = vello_cpu::Pixmap::new(64, 64);

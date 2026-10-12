@@ -82,7 +82,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Image adjustment controls
 - ✗ Brightness, contrast, saturation and exposure
 - ✗ Hue and color adjustments
-- ✗ Blur and sharpening
+- ✓ Layer blur (canvas and PNG/JPEG/WebP export) · ✗ sharpening
 - ✗ Background removal
 - ✗ Image masking
 - ✗ Image replacement while preserving layout

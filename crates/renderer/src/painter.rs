@@ -56,6 +56,12 @@ pub trait Painter {
     fn shadow(&mut self, transform: Affine, rect: Rect, color: Color, radius: f64, std_dev: f64);
     fn push_layer(&mut self, transform: Affine, clip: &Geom<'_>, blend: BlendMode, alpha: f32);
     fn pop_layer(&mut self);
+    /// Starts a layer whose content is blurred (`std_dev` in device pixels), closed by
+    /// `pop_layer`. Returns false (and pushes nothing) when the backend cannot blur.
+    fn push_blur(&mut self, std_dev: f32) -> bool {
+        let _ = std_dev;
+        false
+    }
     /// Draws `image` with `transform` mapping image pixels to device space.
     fn image(&mut self, transform: Affine, image: &DecodedImage, alpha: f32);
     /// Positioned glyphs of one font run (`glyphs` relative to `transform`).
@@ -166,6 +172,17 @@ impl Painter for vello::Scene {
 pub struct CpuPainter<'a> {
     pub cx: &'a mut vello_cpu::RenderContext,
     pub resources: &'a mut vello_cpu::Resources,
+    /// The context renders single-threaded, so filter layers (blur) are allowed.
+    pub filters: bool,
+}
+
+/// A CPU render context that supports filters (blur): single-threaded.
+pub fn filter_context(width: u16, height: u16) -> vello_cpu::RenderContext {
+    let settings = vello_cpu::RenderSettings {
+        num_threads: 0,
+        ..Default::default()
+    };
+    vello_cpu::RenderContext::new_with(width, height, settings)
 }
 
 impl Painter for CpuPainter<'_> {
@@ -240,6 +257,19 @@ impl Painter for CpuPainter<'_> {
 
     fn pop_layer(&mut self) {
         vello_cpu::RenderContext::pop_layer(self.cx);
+    }
+
+    fn push_blur(&mut self, std_dev: f32) -> bool {
+        // Filter layers panic on a multi-threaded context.
+        if !self.filters || std_dev <= 0.0 {
+            return false;
+        }
+        use vello_cpu::peniko::kurbo::Affine as K;
+        self.cx.set_transform(K::IDENTITY);
+        let blur = vello_cpu::filter_effects::FilterFunction::Blur { radius: std_dev };
+        self.cx
+            .push_filter_layer(vello_cpu::filter_effects::Filter::from_function(blur));
+        true
     }
 
     fn glyphs(
