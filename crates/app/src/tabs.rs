@@ -23,6 +23,7 @@ pub(crate) struct DocTab {
     camera: Camera,
     fitted: bool,
     layers: ude_ui::LayersPanel,
+    doc_id: u64,
 }
 
 impl App {
@@ -40,6 +41,7 @@ impl App {
             camera: std::mem::take(&mut self.camera),
             fitted: self.fitted,
             layers: std::mem::take(&mut self.panels.layers),
+            doc_id: self.doc_id,
         }
     }
 
@@ -55,6 +57,7 @@ impl App {
         self.camera = t.camera;
         self.fitted = t.fitted;
         self.panels.layers = t.layers;
+        self.doc_id = t.doc_id;
         self.after_switch();
     }
 
@@ -115,6 +118,7 @@ impl App {
             self.home = was_home;
             return false;
         }
+        crate::autosave::remove(self.doc_id);
         self.tabs.remove(i);
         self.active_tab = None;
         if self.tabs.is_empty() {

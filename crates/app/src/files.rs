@@ -259,6 +259,7 @@ impl App {
     fn save_to(&mut self, path: PathBuf) {
         match ude_format_native::save_to_path(&self.doc, &path) {
             Ok(()) => {
+                crate::autosave::remove(self.doc_id);
                 self.title = file_name(&path);
                 crate::recents::touch(&path);
                 if let Some(page) = self.page {
@@ -349,6 +350,7 @@ impl App {
     }
 
     pub(crate) fn replace_document(&mut self, mut doc: Document, path: Option<PathBuf>) {
+        self.doc_id = crate::autosave::new_id();
         self.page = doc.children(doc.root()).iter().copied().find(|&id| {
             doc.node(id)
                 .is_some_and(|n| matches!(n.kind, NodeKind::Page))

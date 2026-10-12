@@ -13,7 +13,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ~ Rulers, guides and smart guides (smart guides only)
 - ✗ Configurable grids and layout grids (imported grids are kept, not drawn)
 - ~ Snap to grid, guides and objects (snap to objects)
-- ✗ Alignment and distribution
+- ✓ Alignment and distribution (toolbar, Object menu, Alt shortcuts)
 - ✓ Layer ordering and grouping
 - ✓ Lock, hide, rename and duplicate layers
 - ✓ Multi-select and selection tools (click, Shift, marquee, deep select)
@@ -21,11 +21,11 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✓ Undo and redo history
 - ✗ Search layers and objects
 - ✗ Canvas minimap / navigator
-- ✗ Multiple open documents
+- ✓ Multiple open documents (tabs)
 - ✗ Document templates
 - ~ Starter files and presets (New design = one 1440×1024 frame)
 - ~ Local documents and cloud documents (local only, by design)
-- ✗ Autosave and crash recovery
+- ✓ Autosave and crash recovery (on pause, recovered at next launch)
 - ✗ Version history and restore
 - ✗ File duplication and document branching
 - ~ Document metadata and ownership (title and source format)
@@ -76,7 +76,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 
 ## C. Raster and image editing
 - ✓ Image import and placement (open images; image fills from imports)
-- ✗ Drag-and-drop images
+- ✓ Drag-and-drop images (placed at the pointer; design files open in a tab)
 - ~ Crop, resize and rotate images (resize/rotate; no crop)
 - ~ Image fill and fit modes (fill/fit/tile drawn; not editable)
 - ✗ Image adjustment controls

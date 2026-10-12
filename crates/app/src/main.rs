@@ -18,6 +18,7 @@
 //! corner = rotate (Shift = 15° steps), arrows = nudge 1 (Shift = 10), Delete = delete,
 //! Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo, Esc while dragging = cancel.
 
+mod autosave;
 mod backend;
 mod camera;
 mod files;
@@ -168,6 +169,10 @@ struct App {
     /// Open documents; the active one is `None` here (its state is in the fields above).
     tabs: Vec<Option<tabs::DocTab>>,
     active_tab: Option<usize>,
+    /// Autosave file id of the active document.
+    doc_id: u64,
+    last_input: Instant,
+    last_autosave: Instant,
 }
 
 enum Drag {
@@ -238,6 +243,9 @@ impl App {
             recents_dirty: true,
             tabs: Vec::new(),
             active_tab: None,
+            doc_id: autosave::new_id(),
+            last_input: Instant::now(),
+            last_autosave: Instant::now(),
             index,
             selection: Selection::default(),
             hover: None,
@@ -1071,6 +1079,29 @@ impl App {
 }
 
 impl ApplicationHandler<AppEvent> for App {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let dirty = !self.home && self.doc.revision() != self.saved_revision;
+        match autosave::due(dirty, self.last_autosave, self.last_input) {
+            Some(at) if Instant::now() >= at && self.drag.is_none() => {
+                self.last_autosave = Instant::now();
+                if let Err(e) = autosave::write(
+                    self.doc_id,
+                    &self.doc,
+                    &self.title,
+                    self.options.file.as_deref(),
+                ) {
+                    eprintln!("autosave failed: {e}");
+                }
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            }
+            // Never wait for a time already past (that would spin): defer during a gesture.
+            Some(at) => event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                at.max(Instant::now() + autosave::IDLE),
+            )),
+            None => event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait),
+        }
+    }
+
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::FontDownloaded { family, result } => self.font_downloaded(family, result),
@@ -1121,6 +1152,15 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        if matches!(
+            event,
+            WindowEvent::KeyboardInput { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::CursorMoved { .. }
+        ) {
+            self.last_input = Instant::now();
+        }
         let mut egui_consumed = false;
         // egui-winit asks for a repaint on RedrawRequested itself, which would redraw forever.
         if let (Some(state), Some(window)) = (self.egui_state.as_mut(), self.window.as_ref())
@@ -1157,6 +1197,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.redraw();
                 }
             }
+            WindowEvent::DroppedFile(path) => self.dropped(path),
             WindowEvent::CloseRequested => {
                 if self.close_all() {
                     event_loop.exit();
@@ -1255,6 +1296,7 @@ fn main() -> std::process::ExitCode {
         app.tabs.push(None);
         app.active_tab = Some(0);
     }
+    app.recover();
     app.proxy = Some(event_loop.create_proxy());
     app.saved_revision = app.doc.revision();
     if let Err(e) = event_loop.run_app(&mut app) {
@@ -1537,5 +1579,110 @@ impl App {
             eprintln!("align failed: {e}");
         }
         self.redraw();
+    }
+}
+
+impl App {
+    /// Offers to reopen documents an earlier run did not save or close cleanly.
+    fn recover(&mut self) {
+        let left = autosave::leftovers();
+        if left.is_empty() {
+            return;
+        }
+        let answer = rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Warning)
+            .set_title("KuArt")
+            .set_description(format!(
+                "KuArt did not close properly. Recover {} unsaved document{}?",
+                left.len(),
+                if left.len() == 1 { "" } else { "s" }
+            ))
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show();
+        for l in left {
+            if answer == rfd::MessageDialogResult::Yes
+                && let Ok(doc) = ude_format_native::load_from_path(
+                    &l.file,
+                    &ude_format_native::Limits::default(),
+                )
+            {
+                let native = l.original.as_ref().filter(|p| {
+                    p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                        ude_format_native::is_native_extension(&e.to_ascii_lowercase())
+                    })
+                });
+                self.open_in_new_tab(doc, native.cloned());
+                self.title = format!("{} (recovered)", l.title);
+                // Unsaved until the user saves it.
+                self.doc.mark_changed();
+                self.update_title();
+            }
+            autosave::remove(l.id);
+        }
+    }
+
+    /// A file dropped on the window: images go onto the canvas, anything else opens.
+    fn dropped(&mut self, path: std::path::PathBuf) {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !self.home && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp") {
+            if let Err(e) = self.place_image(&path) {
+                eprintln!("{}: {e}", path.display());
+            }
+        } else {
+            self.open_path(path);
+        }
+        self.redraw();
+    }
+
+    /// Adds an image as a new layer at the pointer, at its natural size.
+    fn place_image(&mut self, path: &std::path::Path) -> Result<(), String> {
+        use ude_core::assets::{AssetEntry, AssetKind, AssetSource, Codec, ContentHash};
+        let page = self.page.ok_or("no page")?;
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let reader = image::ImageReader::new(std::io::Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        let codec = match reader.format() {
+            Some(image::ImageFormat::Png) => Codec::Png,
+            Some(image::ImageFormat::Jpeg) => Codec::Jpeg,
+            Some(image::ImageFormat::WebP) => Codec::WebP,
+            _ => return Err("unsupported image".into()),
+        };
+        let (w, h) = reader.into_dimensions().map_err(|e| e.to_string())?;
+        let asset = self.doc.assets.insert(AssetEntry {
+            hash: ContentHash(*blake3::hash(&bytes).as_bytes()),
+            kind: AssetKind::Image {
+                width: w,
+                height: h,
+            },
+            source: AssetSource::Memory {
+                bytes: bytes.into(),
+                codec,
+            },
+        });
+        let at = self.doc_point(self.cursor);
+        let name = self.doc.strings.intern(&files::file_name(path));
+        let node = ude_core::Node::new(NodeKind::Raster { asset }, name)
+            .with_transform(ude_core::Affine::translate(at.x as f32, at.y as f32))
+            .with_size(w as f32, h as f32);
+        let id = self.doc.create(node);
+        let index = self.doc.children(page).len() as u32;
+        let mut tx = Transaction::new("Place image");
+        tx.apply(
+            &mut self.doc,
+            Op::Attach {
+                id,
+                parent: page,
+                index,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        self.history.commit(&mut self.doc, tx);
+        self.selection.set([id]);
+        Ok(())
     }
 }
