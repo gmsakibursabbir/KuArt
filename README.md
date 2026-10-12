@@ -191,6 +191,7 @@ in-app Dev Mode panel and PDF export. The full plan and the list of known gaps a
 | [Compatibility matrix](docs/compatibility-matrix.md) | per-feature import status |
 | [Dev Mode](docs/dev-mode.md) | inspector and code-generation pipeline |
 | [MCP server](docs/mcp.md) | tools for AI agents |
+| [Feature gaps](docs/feature-gaps.md) | what is missing vs Figma, XD, Sketch, Penpot |
 | [Rendering](docs/rendering-strategy.md) · [Memory](docs/memory-strategy.md) | GPU/CPU rendering, caching, RAM budget |
 | [Benchmarks](docs/benchmark-plan.md) · [Performance log](docs/perf-log.md) | targets and measured results |
 | [UI design system](docs/ui-design-system.md) | Kuduy tokens, type and layout |
