@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use ude_core::assets::{AssetId, AssetSource, AssetStore};
+use ude_core::assets::{AssetId, AssetSource, AssetStore, Codec};
 use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
 /// Default budget for decoded pixels (8 GB RAM tier).
@@ -151,10 +151,17 @@ fn mip_level(src: (u32, u32), needed: (f64, f64)) -> u8 {
 
 fn decode(assets: &AssetStore, id: AssetId, level: u8) -> Result<DecodedImage, String> {
     let entry = assets.get(id).ok_or("unknown asset")?;
-    let AssetSource::Memory { bytes, .. } = &entry.source else {
+    let AssetSource::Memory { bytes, codec } = &entry.source else {
         return Err("image bytes are not loaded".into());
     };
-    let img = image::load_from_memory(bytes).map_err(|e| e.to_string())?;
+    let img = if *codec == Codec::PsdChannels {
+        let (w, h, rgba) = ude_format_psd::decode_rgba(bytes)?;
+        image::RgbaImage::from_raw(w, h, rgba)
+            .ok_or("PSD layer size mismatch")?
+            .into()
+    } else {
+        image::load_from_memory(bytes).map_err(|e| e.to_string())?
+    };
     let (w, h) = (img.width(), img.height());
     // Each level halves the size; also keep within the u16 pixmap limit.
     let mut shift = u32::from(level);

@@ -29,9 +29,8 @@ USAGE:
     design-editor-cli mcp              (MCP server on stdio, for AI agents)
     design-editor-cli --version
 
-Supported now: .design. Importers arrive in later milestones:
-    .psd (M10), .fig (M11), .xd (M12). .svg and images (.png .jpg .webp) open; output
-    can be .design, .png or .svg (first page).";
+Input: .design, .psd/.psb, .svg and images (.png .jpg .webp). Coming: .fig (M11), .xd (M12).
+Output: .design, .png or .svg (first page).";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -99,7 +98,18 @@ fn open(path: &Path) -> Result<Document, String> {
             }
             Ok(im.doc)
         }
-        "psd" | "psb" => Err("PSD import is not implemented yet (milestone M10)".into()),
+        "psd" | "psb" => {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let name = path
+                .file_name()
+                .map_or_else(|| "document".into(), |n| n.to_string_lossy().into_owned());
+            let im = ude_format_psd::import(&bytes, &name)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
         "fig" => Err("Figma import is not implemented yet (milestone M11)".into()),
         "xd" => Err("Adobe XD import is not implemented yet (milestone M12)".into()),
         other => Err(format!("unsupported input format '.{other}'")),

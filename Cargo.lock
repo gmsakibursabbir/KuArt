@@ -3148,6 +3148,7 @@ dependencies = [
  "ude-core",
  "ude-editor",
  "ude-format-native",
+ "ude-format-psd",
  "ude-format-raster",
  "ude-format-svg",
  "ude-format-svg-import",
@@ -3181,6 +3182,7 @@ dependencies = [
  "ude-core",
  "ude-editor",
  "ude-format-native",
+ "ude-format-psd",
  "ude-format-raster",
  "ude-format-svg",
  "ude-format-svg-import",
@@ -3217,6 +3219,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ude-format-psd"
+version = "0.0.1"
+dependencies = [
+ "blake3",
+ "flate2",
+ "image",
+ "ude-core",
+]
+
+[[package]]
 name = "ude-format-raster"
 version = "0.0.1"
 dependencies = [
@@ -3248,6 +3260,7 @@ dependencies = [
  "image",
  "parley",
  "ude-core",
+ "ude-format-psd",
  "vello",
  "vello_cpu 0.3.0",
 ]

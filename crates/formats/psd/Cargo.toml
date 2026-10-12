@@ -1,0 +1,16 @@
+[package]
+name = "ude-format-psd"
+description = "Photoshop (.psd/.psb) import: layer tree, groups, lazy layer pixels"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+blake3 = "1"
+flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+ude-core = { path = "../../core" }
+
+[lints]
+workspace = true

@@ -204,7 +204,8 @@ impl<P: Painter> Cx<'_, P> {
         let blend = convert::blend(n.blend);
         // A layer is needed only when it changes the result.
         let group_opacity = !leaf && n.opacity < 1.0 && n.children.len() > 1;
-        let layer = !leaf && (clips || blend.is_some() || group_opacity);
+        // Leaves need one only for a blend mode (e.g. a Photoshop multiply layer).
+        let layer = blend.is_some() || (!leaf && (clips || group_opacity));
         let (layer_alpha, inner_alpha) = if layer {
             (alpha * n.opacity, 1.0)
         } else {
