@@ -86,7 +86,8 @@ pub(crate) fn file_name(path: &Path) -> String {
 
 impl App {
     pub(crate) fn open_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = self
+            .file_dialog()
             .set_title("Open")
             .add_filter("Designs and images", OPENABLE)
             .add_filter("KuArt document", &["krt", "design"])
@@ -99,7 +100,8 @@ impl App {
     /// Opens another app's file (Figma, Sketch, XD, Photoshop, Illustrator, PDF, SVG, images)
     /// as a new KuArt document.
     pub(crate) fn import_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = self
+            .file_dialog()
             .set_title("Import")
             .add_filter(
                 "Design files",
@@ -189,22 +191,54 @@ impl App {
     }
 
     /// Asks to save unsaved changes; false when the user cancels.
+    /// Native dialogs are owned by the KuArt window: modal and on top of it (without a
+    /// parent, Windows can open them behind the window, which looks like a freeze).
+    pub(crate) fn file_dialog(&self) -> rfd::FileDialog {
+        let d = rfd::FileDialog::new();
+        match &self.window {
+            Some(w) => d.set_parent(&**w),
+            None => d,
+        }
+    }
+
+    pub(crate) fn message_dialog(&self) -> rfd::MessageDialog {
+        let d = rfd::MessageDialog::new();
+        match &self.window {
+            Some(w) => d.set_parent(&**w),
+            None => d,
+        }
+    }
+
     pub(crate) fn confirm_discard(&mut self) -> bool {
         if self.home || self.doc.revision() == self.saved_revision {
             return true;
         }
-        match rfd::MessageDialog::new()
+        let (save, discard) = ("Save", "Don't save");
+        match self
+            .message_dialog()
             .set_level(rfd::MessageLevel::Warning)
             .set_title("KuArt")
-            .set_description(format!("Save changes to \u{201c}{}\u{201d}?", self.title))
-            .set_buttons(rfd::MessageButtons::YesNoCancel)
+            .set_description(format!(
+                "Save changes to \u{201c}{}\u{201d} before closing?",
+                self.title
+            ))
+            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+                save.into(),
+                discard.into(),
+                "Cancel".into(),
+            ))
             .show()
         {
             rfd::MessageDialogResult::Yes => {
                 self.save();
                 self.doc.revision() == self.saved_revision
             }
+            rfd::MessageDialogResult::Custom(c) if c == save => {
+                self.save();
+                self.doc.revision() == self.saved_revision
+            }
             rfd::MessageDialogResult::No => true,
+            rfd::MessageDialogResult::Custom(c) => c == discard,
             _ => false,
         }
     }
@@ -275,7 +309,8 @@ impl App {
             .rsplit_once('.')
             .map_or(self.title.as_str(), |(s, _)| s)
             .to_owned();
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = self
+            .file_dialog()
             .add_filter("KuArt document", &[ude_format_native::EXTENSION])
             .set_file_name(format!("{stem}.{}", ude_format_native::EXTENSION))
             .save_file()
@@ -320,7 +355,7 @@ impl App {
             .filter(|s| !s.is_empty())
             .unwrap_or("export")
             .to_owned();
-        let mut dialog = rfd::FileDialog::new().set_title("Export");
+        let mut dialog = self.file_dialog().set_title("Export");
         // The chosen format first, so it is the dialog's default.
         let mut formats = ude_ui::ExportFormat::ALL.to_vec();
         formats.retain(|f| *f != o.format);
@@ -425,7 +460,7 @@ impl App {
 
     fn report(&self, message: &str) {
         eprintln!("error: {message}");
-        rfd::MessageDialog::new()
+        self.message_dialog()
             .set_level(rfd::MessageLevel::Error)
             .set_title("KuArt")
             .set_description(message)

@@ -1843,7 +1843,8 @@ impl App {
         if left.is_empty() {
             return;
         }
-        let answer = rfd::MessageDialog::new()
+        let answer = self
+            .message_dialog()
             .set_level(rfd::MessageLevel::Warning)
             .set_title("KuArt")
             .set_description(format!(
