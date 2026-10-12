@@ -229,6 +229,8 @@ pub struct Status<'a> {
     pub update_status: Option<&'a str>,
     /// Name of a file being opened: a loading screen covers the window.
     pub loading: Option<&'a str>,
+    /// Installed font families, sorted (font picker).
+    pub fonts: &'a [String],
 }
 
 #[derive(Default)]
@@ -377,7 +379,8 @@ impl Panels {
                         } else if self.dev_mode {
                             self.dev.ui(ui, doc, selection, page, t);
                         } else {
-                            self.inspector.ui(ui, doc, selection, t, &mut actions);
+                            self.inspector
+                                .ui(ui, doc, selection, t, status.fonts, &mut actions);
                         }
                     });
             });
@@ -1344,6 +1347,7 @@ mod tests {
             )),
             update_status: Some("KuArt 9.9.9 is available"),
             loading: Some("Big file.fig"),
+            fonts: &[],
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

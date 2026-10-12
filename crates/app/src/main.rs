@@ -193,6 +193,8 @@ struct App {
     quit: bool,
     /// File being opened on a worker thread (shown as a loading screen).
     loading: Option<String>,
+    /// Installed font families for the font picker (filled on first use).
+    font_names: Vec<String>,
 }
 
 enum Drag {
@@ -273,6 +275,7 @@ impl App {
             update_ready: None,
             quit: false,
             loading: None,
+            font_names: Vec::new(),
             index,
             selection: Selection::default(),
             hover: None,
@@ -363,6 +366,9 @@ impl App {
             recents::load_textures(&self.egui, &mut self.recents);
         }
         let hint = self.hint();
+        if self.font_names.is_empty() {
+            self.font_names = self.caches.text.family_names();
+        }
         let update = self
             .update
             .as_ref()
@@ -405,6 +411,7 @@ impl App {
             update,
             update_status: self.update_status.as_deref(),
             loading: self.loading.as_deref(),
+            fonts: &self.font_names,
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -1574,6 +1581,8 @@ impl App {
     }
 
     fn font_downloaded(&mut self, family: String, result: Result<Vec<PathBuf>, String>) {
+        // The picker lists the new family next time.
+        self.font_names.clear();
         self.font_status = Some(match result {
             Ok(paths) => {
                 let faces: usize = paths

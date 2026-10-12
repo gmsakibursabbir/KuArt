@@ -84,6 +84,19 @@ impl TextEngine {
         self.cache.len()
     }
 
+    /// Every installed font family (system and user fonts folder), sorted.
+    pub fn family_names(&mut self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .fonts
+            .collection
+            .family_names()
+            .map(str::to_owned)
+            .collect();
+        names.sort_by_key(|n| n.to_lowercase());
+        names.dedup();
+        names
+    }
+
     /// Registers font file bytes (TTF/OTF/TTC). Returns the number of faces added.
     /// Missing-font checks and cached layouts are reset so text re-shapes with the new font.
     pub fn add_font_data(&mut self, bytes: Vec<u8>) -> usize {

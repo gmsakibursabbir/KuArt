@@ -53,6 +53,8 @@ const BLENDS: [(BlendMode, &str); 17] = [
 #[derive(Default)]
 pub struct Inspector {
     session: u64,
+    /// Search text in the font picker.
+    font_query: String,
     /// Selected gradient stop in the Fill section.
     stop: usize,
     pub export: ExportOptions,
@@ -100,6 +102,7 @@ impl Inspector {
         doc: &Document,
         selection: &Selection,
         t: &Tokens,
+        fonts: &[String],
         actions: &mut Vec<Action>,
     ) {
         if !selection.is_empty() {
@@ -287,7 +290,7 @@ impl Inspector {
         }
         self.effects_section(ui, t, id, n, actions);
         if let NodeKind::Text(text) = &n.kind {
-            self.text_section(ui, doc, id, text, t, actions);
+            self.text_section(ui, doc, id, text, t, fonts, actions);
         }
         self.export_section(
             ui,
@@ -455,6 +458,72 @@ impl Inspector {
         }
     }
 
+    /// Font family picker: installed families with a search box; a family that is not
+    /// installed is shown in the warning colour. Returns true when a family was picked.
+    fn font_picker(
+        &mut self,
+        ui: &mut Ui,
+        t: &Tokens,
+        family: &mut String,
+        fonts: &[String],
+    ) -> bool {
+        let installed = fonts.is_empty() || fonts.iter().any(|f| f.eq_ignore_ascii_case(family));
+        let shown = RichText::new(family.as_str()).color(if installed {
+            t.text_primary
+        } else {
+            t.warning
+        });
+        let mut picked = None;
+        let r = egui::ComboBox::from_id_salt("font_family")
+            .width(150.0)
+            .height(320.0)
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                ui.add(
+                    TextEdit::singleline(&mut self.font_query)
+                        .hint_text("Search fonts")
+                        .desired_width(f32::INFINITY),
+                )
+                .request_focus();
+                let q = self.font_query.to_lowercase();
+                let list: Vec<&String> = fonts
+                    .iter()
+                    .filter(|f| f.to_lowercase().contains(&q))
+                    .collect();
+                if list.is_empty() {
+                    ui.label(RichText::new("No installed font matches").color(t.text_muted));
+                }
+                let row = ui.spacing().interact_size.y;
+                egui::ScrollArea::vertical().max_height(280.0).show_rows(
+                    ui,
+                    row,
+                    list.len(),
+                    |ui, range| {
+                        for f in &list[range] {
+                            if ui
+                                .selectable_label(f.eq_ignore_ascii_case(family), f.as_str())
+                                .clicked()
+                            {
+                                picked = Some((*f).clone());
+                            }
+                        }
+                    },
+                );
+            });
+        if !installed {
+            r.response
+                .on_hover_text("Not installed: drawn with a fallback font");
+        }
+        match picked {
+            Some(f) if f != *family => {
+                *family = f;
+                self.font_query.clear();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Colour pickers report changes every frame while open: one undo step per open picker.
     fn once_key(&mut self, r: &Response) -> u64 {
         if r.clicked() || r.gained_focus() {
@@ -564,6 +633,7 @@ impl Inspector {
     }
 
     /// Text content and the first run's font. Editing content collapses rich runs to one style.
+    #[allow(clippy::too_many_arguments)]
     fn text_section(
         &mut self,
         ui: &mut Ui,
@@ -571,6 +641,7 @@ impl Inspector {
         id: NodeId,
         text: &TextData,
         t: &Tokens,
+        fonts: &[String],
         actions: &mut Vec<Action>,
     ) {
         let Some(style) = text.styles.first() else {
@@ -603,9 +674,9 @@ impl Inspector {
                     .spacing([6.0, 6.0])
                     .show(ui, |ui| {
                         field_label(ui, t, "Font");
-                        kf = self.edited(
-                            &ui.add(TextEdit::singleline(&mut family).desired_width(150.0)),
-                        );
+                        if self.font_picker(ui, t, &mut family, fonts) {
+                            kf = Some(self.once());
+                        }
                         ui.end_row();
                         field_label(ui, t, "Weight");
                         let before = weight;
