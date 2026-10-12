@@ -7,8 +7,8 @@ use ude_core::{Document, NodeKind};
 use crate::App;
 
 const OPENABLE: &[&str] = &[
-    "krt", "design", "fig", "jam", "deck", "buzz", "site", "make", "sketch", "ai", "pdf", "psd",
-    "psb", "svg", "png", "jpg", "jpeg", "webp",
+    "krt", "design", "fig", "jam", "deck", "buzz", "site", "make", "sketch", "xd", "ai", "pdf",
+    "psd", "psb", "svg", "png", "jpg", "jpeg", "webp",
 ];
 
 /// Loads a `.krt` document or imports another format.
@@ -150,24 +150,37 @@ impl App {
             .unwrap_or("export");
         let Some(path) = rfd::FileDialog::new()
             .add_filter("PNG image", &["png"])
+            .add_filter("JPEG image", &["jpg", "jpeg"])
+            .add_filter("WebP image", &["webp"])
             .add_filter("SVG vector", &["svg"])
+            .add_filter("PDF document", &["pdf"])
             .set_file_name(format!("{name}.png"))
             .save_file()
         else {
             return;
         };
-        let svg = path
+        let ext = path
             .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("svg"));
-        let bytes = if svg {
-            let (doc, text) = (&self.doc, &mut self.caches.text);
-            ude_format_svg::export_with(doc, target, &mut |t, size| {
-                text.lines(t, &doc.strings, size)
-            })
-            .map(String::into_bytes)
-        } else {
+            .and_then(|e| e.to_str())
+            .unwrap_or("png")
+            .to_ascii_lowercase();
+        let bytes = match ext.as_str() {
+            "svg" => {
+                let (doc, text) = (&self.doc, &mut self.caches.text);
+                ude_format_svg::export_with(doc, target, &mut |t, size| {
+                    text.lines(t, &doc.strings, size)
+                })
+                .map(String::into_bytes)
+            }
+            "pdf" => {
+                ude_renderer::export_pdf(&self.doc, &[target], &mut self.caches).map(|(b, _)| b)
+            }
             // 2x for crisp results on high-DPI screens.
-            ude_renderer::export_png(&self.doc, target, 2.0, &mut self.caches)
+            other => {
+                let format = ude_renderer::RasterFormat::from_extension(other)
+                    .unwrap_or(ude_renderer::RasterFormat::Png);
+                ude_renderer::export_raster(&self.doc, target, 2.0, format, &mut self.caches)
+            }
         };
         if let Err(e) = bytes.and_then(|b| std::fs::write(&path, b).map_err(|e| e.to_string())) {
             self.report(&format!("{}: {e}", path.display()));

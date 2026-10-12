@@ -13,6 +13,7 @@ pub mod convert;
 pub mod images;
 pub mod overlay;
 pub mod painter;
+pub mod pdf;
 pub mod text;
 
 pub use images::{DecodedImage, ImageCache};
@@ -126,35 +127,18 @@ pub fn render_to_rgba(
     let view = Affine::scale(scale) * Affine::translate((-bounds.x0, -bounds.y0));
     let mut cx = vello_cpu::RenderContext::new(w, h);
     let mut resources = vello_cpu::Resources::new();
-    caches.images.next_frame();
     let mut painter = CpuPainter {
         cx: &mut cx,
         resources: &mut resources,
     };
-    let mut tcx = Cx {
+    paint_for_export(
         doc,
-        painter: &mut painter,
+        id,
+        view,
+        Rect::new(0.0, 0.0, f64::from(w), f64::from(h)),
+        &mut painter,
         caches,
-        viewport: Rect::new(0.0, 0.0, f64::from(w), f64::from(h)),
-        stats: FrameStats::default(),
-    };
-    let is_page = doc
-        .node(id)
-        .is_some_and(|n| matches!(n.kind, NodeKind::Page | NodeKind::Document));
-    if is_page {
-        for &child in doc.children(id) {
-            tcx.node(child, view, 1.0);
-        }
-    } else {
-        // Start from the parent's world transform so the layer renders exactly as on canvas.
-        let parent = doc
-            .node(id)
-            .and_then(|n| n.parent)
-            .map_or(Affine::IDENTITY, |p| {
-                convert::affine(&doc.world_transform(p))
-            });
-        tcx.node(id, view * parent, 1.0);
-    }
+    );
     cx.flush();
     let mut pixmap = vello_cpu::Pixmap::new(w, h);
     cx.render(&mut pixmap, &mut resources);
@@ -576,6 +560,96 @@ fn regular_polygon(w: f64, h: f64, n: usize, inner: Option<f64>) -> BezPath {
     p
 }
 
+/// Draws `id` (a page's layers, or one layer as placed on the canvas) with `view` mapping
+/// document space to the output. Shared by raster and PDF export.
+pub(crate) fn paint_for_export(
+    doc: &Document,
+    id: NodeId,
+    view: Affine,
+    viewport: Rect,
+    painter: &mut impl Painter,
+    caches: &mut RenderCaches,
+) {
+    caches.images.next_frame();
+    let mut tcx = Cx {
+        doc,
+        painter,
+        caches,
+        viewport,
+        stats: FrameStats::default(),
+    };
+    let is_page = doc
+        .node(id)
+        .is_some_and(|n| matches!(n.kind, NodeKind::Page | NodeKind::Document));
+    if is_page {
+        for &child in doc.children(id) {
+            tcx.node(child, view, 1.0);
+        }
+    } else {
+        // Start from the parent's world transform so the layer renders exactly as on canvas.
+        let parent = doc
+            .node(id)
+            .and_then(|n| n.parent)
+            .map_or(Affine::IDENTITY, |p| {
+                convert::affine(&doc.world_transform(p))
+            });
+        tcx.node(id, view * parent, 1.0);
+    }
+}
+
+/// Raster export formats.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RasterFormat {
+    Png,
+    /// Flattened onto white (JPEG has no transparency), quality 90.
+    Jpeg,
+    /// Lossless WebP.
+    WebP,
+}
+
+impl RasterFormat {
+    /// From a file extension (`png`, `jpg`/`jpeg`, `webp`).
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext.to_ascii_lowercase().as_str() {
+            "png" => Some(Self::Png),
+            "jpg" | "jpeg" => Some(Self::Jpeg),
+            "webp" => Some(Self::WebP),
+            _ => None,
+        }
+    }
+}
+
+/// Renders `id` at `scale` and encodes it.
+pub fn export_raster(
+    doc: &Document,
+    id: NodeId,
+    scale: f64,
+    format: RasterFormat,
+    caches: &mut RenderCaches,
+) -> Result<Vec<u8>, String> {
+    let (w, h, rgba) =
+        render_to_rgba(doc, id, scale, caches).ok_or("nothing to export (empty or too large)")?;
+    let img = image::RgbaImage::from_raw(w, h, rgba).ok_or("pixel buffer size mismatch")?;
+    let mut out = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut out);
+    match format {
+        RasterFormat::Png => img.write_to(&mut cursor, image::ImageFormat::Png),
+        RasterFormat::WebP => img.write_to(&mut cursor, image::ImageFormat::WebP),
+        RasterFormat::Jpeg => {
+            let rgb = image::RgbImage::from_fn(w, h, |x, y| {
+                let [r, g, b, a] = img.get_pixel(x, y).0;
+                let over = |c: u8| {
+                    ((u16::from(c) * u16::from(a) + 255 * (255 - u16::from(a))) / 255) as u8
+                };
+                image::Rgb([over(r), over(g), over(b)])
+            });
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 90).encode_image(&rgb)
+        }
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
 /// Encodes `id` as a PNG at `scale` (see [`render_to_rgba`]).
 pub fn export_png(
     doc: &Document,
@@ -583,14 +657,10 @@ pub fn export_png(
     scale: f64,
     caches: &mut RenderCaches,
 ) -> Result<Vec<u8>, String> {
-    let (w, h, rgba) =
-        render_to_rgba(doc, id, scale, caches).ok_or("nothing to export (empty or too large)")?;
-    let img = image::RgbaImage::from_raw(w, h, rgba).ok_or("pixel buffer size mismatch")?;
-    let mut out = Vec::new();
-    img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
-        .map_err(|e| e.to_string())?;
-    Ok(out)
+    export_raster(doc, id, scale, RasterFormat::Png, caches)
 }
+
+pub use pdf::export_pdf;
 
 #[cfg(test)]
 mod tests {

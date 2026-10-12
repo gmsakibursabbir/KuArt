@@ -30,7 +30,7 @@ USAGE:
     design-editor-cli --version
 
 Input: .krt (and legacy .design), .fig/.jam/.deck/.buzz/.site/.make, .sketch, .xd, .ai, .pdf, .psd/.psb, .svg and images (.png .jpg .webp).
-Output: .krt, .png or .svg (first page).";
+Output: .krt, .png, .jpg, .webp or .svg (first page), .pdf (one page per artboard).";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -256,29 +256,45 @@ fn cmd_convert(input: &Path, output: &Path) -> CliResult {
     let doc = open(input)?;
     match extension(output).as_str() {
         "krt" | "design" => save_to_path(&doc, output).map_err(|e| e.to_string())?,
-        "png" | "svg" => {
+        ext @ ("png" | "jpg" | "jpeg" | "webp" | "svg") => {
             // Exports the first page.
             let page = *doc
                 .children(doc.root())
                 .first()
                 .ok_or("document has no pages")?;
-            let bytes = if extension(output) == "png" {
-                ude_renderer::export_png(
+            let bytes = match ude_renderer::RasterFormat::from_extension(ext) {
+                Some(format) => ude_renderer::export_raster(
                     &doc,
                     page,
                     1.0,
+                    format,
                     &mut ude_renderer::RenderCaches::default(),
-                )?
-            } else {
-                let mut text = ude_renderer::TextEngine::default();
-                ude_format_svg::export_with(&doc, page, &mut |t, size| {
-                    text.lines(t, &doc.strings, size)
-                })?
-                .into_bytes()
+                )?,
+                None => {
+                    let mut text = ude_renderer::TextEngine::default();
+                    ude_format_svg::export_with(&doc, page, &mut |t, size| {
+                        text.lines(t, &doc.strings, size)
+                    })?
+                    .into_bytes()
+                }
             };
             std::fs::write(output, bytes).map_err(|e| format!("{}: {e}", output.display()))?;
         }
-        "pdf" => return Err("PDF export is not implemented yet (phase 2)".into()),
+        "pdf" => {
+            let targets = pdf_targets(&doc);
+            if targets.is_empty() {
+                return Err("document has no pages".into());
+            }
+            let (bytes, notes) = ude_renderer::export_pdf(
+                &doc,
+                &targets,
+                &mut ude_renderer::RenderCaches::default(),
+            )?;
+            for n in notes {
+                eprintln!("note: {n}");
+            }
+            std::fs::write(output, bytes).map_err(|e| format!("{}: {e}", output.display()))?;
+        }
         other => return Err(format!("unsupported output format '.{other}'")),
     }
     out!("wrote {}", output.display());
@@ -339,4 +355,23 @@ fn cmd_code(input: &Path, target: &str, output: Option<&Path>) -> CliResult {
         None => out!("{}", out.code),
     }
     Ok(())
+}
+
+/// One PDF page per artboard (top-level frame); a page without artboards becomes one PDF page.
+pub(crate) fn pdf_targets(doc: &Document) -> Vec<ude_core::NodeId> {
+    let mut out = Vec::new();
+    for &page in doc.children(doc.root()) {
+        let frames: Vec<_> = doc
+            .children(page)
+            .iter()
+            .copied()
+            .filter(|&id| doc.is_artboard(id))
+            .collect();
+        if frames.is_empty() {
+            out.push(page);
+        } else {
+            out.extend(frames);
+        }
+    }
+    out
 }

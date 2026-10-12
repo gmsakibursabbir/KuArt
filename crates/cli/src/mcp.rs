@@ -176,11 +176,32 @@ impl Session {
                 let id = self.target(a)?;
                 let scale = opt_f32(a, "scale").unwrap_or(1.0).clamp(0.01, 16.0);
                 let bytes = match crate::extension(&path).as_str() {
-                    "png" => {
-                        ude_renderer::export_png(&self.doc, id, f64::from(scale), &mut self.caches)?
+                    ext @ ("png" | "jpg" | "jpeg" | "webp") => {
+                        let format = ude_renderer::RasterFormat::from_extension(ext)
+                            .unwrap_or(ude_renderer::RasterFormat::Png);
+                        ude_renderer::export_raster(
+                            &self.doc,
+                            id,
+                            f64::from(scale),
+                            format,
+                            &mut self.caches,
+                        )?
+                    }
+                    "pdf" => {
+                        // Without an id: one PDF page per artboard.
+                        let targets = if a.get("id").is_some() {
+                            vec![id]
+                        } else {
+                            crate::pdf_targets(&self.doc)
+                        };
+                        ude_renderer::export_pdf(&self.doc, &targets, &mut self.caches)?.0
                     }
                     "svg" => self.svg(id)?.into_bytes(),
-                    other => return Err(format!("export supports .png and .svg, not '.{other}'")),
+                    other => {
+                        return Err(format!(
+                            "export supports .png, .jpg, .webp, .svg and .pdf, not '.{other}'"
+                        ));
+                    }
                 };
                 std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
                 Ok(vec![text(format!("wrote {}", path.display()))])
@@ -679,7 +700,7 @@ fn tool_list() -> Value {
         ),
         tool(
             "export",
-            "Export a node (default: first page) to .png or .svg.",
+            "Export a node (default: first page) to .png, .jpg, .webp, .svg or .pdf (PDF without id: one page per artboard).",
             json!({"path": {"type": "string"}, "id": id, "scale": {"type": "number"}}),
             &["path"]
         ),

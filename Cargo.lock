@@ -3578,8 +3578,10 @@ dependencies = [
 name = "ude-renderer"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "image",
  "parley",
+ "skrifa 0.44.0",
  "ude-core",
  "ude-format-psd",
  "vello",
