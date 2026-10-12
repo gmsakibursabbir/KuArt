@@ -6,6 +6,8 @@
 //! Controls: wheel = pan (Shift = horizontal), Ctrl+wheel / pinch = zoom at cursor,
 //! middle-drag or Space+drag = pan, Shift+1 = zoom to fit, Shift+0 / Ctrl+0 = 100%,
 //! Ctrl+= / Ctrl+- = zoom, F3 = frame stats in the title bar, F12 = diagnostics window.
+//! Ctrl+C / X / V = copy, cut, paste; Ctrl+D = duplicate; Ctrl+G / Ctrl+Shift+G = group /
+//! ungroup; Ctrl+] / Ctrl+[ = forward / backward (with Shift: to front / back).
 //!
 //! Selection: click = select layer (group-first), Ctrl/Cmd+click = deep select,
 //! Shift+click = add/remove, double-click = enter group, drag on empty canvas = marquee,
@@ -31,8 +33,8 @@ use backend::{Backend, FrameResult, UiFrame};
 use camera::Camera;
 use selection_ui::{Marquee, build_overlay};
 use ude_core::{Document, History, NodeId, NodeKind, Op, Transaction};
-use ude_editor::Tool;
 use ude_editor::transform::{self, Modifiers};
+use ude_editor::{Arrange, Tool};
 use ude_editor::{
     Gesture, HandleIndex, Selection, SelectionMode, Snapper, drill, hit_test, marquee_select,
     resolve_target,
@@ -142,6 +144,8 @@ struct App {
     proxy: Option<EventLoopProxy<AppEvent>>,
     /// Progress or result of the last font download, shown in the status bar.
     font_status: Option<String>,
+    /// Copied layers (Ctrl+C / Ctrl+X); valid for the current document only.
+    clipboard: ude_editor::Clipboard,
     /// Diagnostics window (F12).
     diagnostics: bool,
     /// Duration and statistics of the last presented frame.
@@ -205,6 +209,7 @@ impl App {
             panel_hover: None,
             proxy: None,
             font_status: None,
+            clipboard: ude_editor::Clipboard::default(),
             diagnostics: false,
             last_frame: None,
             applied_theme: None,
@@ -551,6 +556,25 @@ impl App {
         }
         match code {
             KeyCode::KeyO if ctrl => self.open_dialog(),
+            KeyCode::KeyC if ctrl => self.copy(),
+            KeyCode::KeyX if ctrl => {
+                self.copy();
+                self.delete_selection();
+            }
+            KeyCode::KeyV if ctrl => self.paste(),
+            KeyCode::KeyD if ctrl => self.structural("duplicate"),
+            KeyCode::KeyG if ctrl && shift => self.structural("ungroup"),
+            KeyCode::KeyG if ctrl => self.structural("group"),
+            KeyCode::BracketRight if ctrl => self.arrange(if shift {
+                Arrange::ToFront
+            } else {
+                Arrange::Forward
+            }),
+            KeyCode::BracketLeft if ctrl => self.arrange(if shift {
+                Arrange::ToBack
+            } else {
+                Arrange::Backward
+            }),
             KeyCode::KeyS if ctrl && shift => self.save_as(),
             KeyCode::KeyS if ctrl => self.save(),
             KeyCode::KeyE if ctrl && shift => self.export_dialog(),
@@ -558,13 +582,7 @@ impl App {
             KeyCode::KeyZ if ctrl => self.undo(),
             KeyCode::KeyY if ctrl => self.redo(),
             KeyCode::Delete | KeyCode::Backspace if !self.selection.is_empty() => {
-                let ids = self.selection.ids().to_vec();
-                match transform::delete(&mut self.doc, &mut self.history, &ids) {
-                    Ok(()) => self.selection.clear(),
-                    Err(e) => eprintln!("delete failed: {e}"),
-                }
-                self.hover = None;
-                self.redraw();
+                self.delete_selection();
             }
             KeyCode::Digit1 if shift => self.zoom_to_fit(),
             KeyCode::Digit0 if shift || ctrl => {
@@ -1214,5 +1232,72 @@ impl App {
             ));
         }
         rows
+    }
+}
+
+impl App {
+    fn delete_selection(&mut self) {
+        let ids = self.selection.ids().to_vec();
+        match transform::delete(&mut self.doc, &mut self.history, &ids) {
+            Ok(()) => self.selection.clear(),
+            Err(e) => eprintln!("delete failed: {e}"),
+        }
+        self.hover = None;
+        self.redraw();
+    }
+
+    /// Copies the selection in-app and, as SVG markup, to the system clipboard.
+    fn copy(&mut self) {
+        if self.selection.is_empty() {
+            return;
+        }
+        self.clipboard = ude_editor::commands::copy(&self.doc, self.selection.ids());
+        if let [id] = self.selection.ids()
+            && let Ok(svg) = ude_format_svg::export(&self.doc, *id)
+        {
+            self.egui.copy_text(svg);
+        }
+    }
+
+    /// Pastes on top of the current page.
+    fn paste(&mut self) {
+        let Some(page) = self.page else { return };
+        if self.clipboard.is_empty() {
+            return;
+        }
+        match ude_editor::commands::paste(&mut self.doc, &mut self.history, &self.clipboard, page) {
+            Ok(ids) => self.selection.set(ids),
+            Err(e) => eprintln!("paste failed: {e}"),
+        }
+        self.redraw();
+    }
+
+    /// Duplicate, group or ungroup the selection; the result becomes the selection.
+    fn structural(&mut self, what: &str) {
+        let ids = self.selection.ids().to_vec();
+        if ids.is_empty() {
+            return;
+        }
+        use ude_editor::commands as c;
+        let (doc, history) = (&mut self.doc, &mut self.history);
+        let result = match what {
+            "duplicate" => c::duplicate(doc, history, &ids),
+            "group" => c::group(doc, history, &ids).map(|g| g.into_iter().collect()),
+            _ => c::ungroup(doc, history, &ids),
+        };
+        match result {
+            Ok(new) if !new.is_empty() => self.selection.set(new),
+            Ok(_) => {}
+            Err(e) => eprintln!("{what} failed: {e}"),
+        }
+        self.redraw();
+    }
+
+    fn arrange(&mut self, how: Arrange) {
+        let ids = self.selection.ids().to_vec();
+        if let Err(e) = ude_editor::commands::arrange(&mut self.doc, &mut self.history, &ids, how) {
+            eprintln!("arrange failed: {e}");
+        }
+        self.redraw();
     }
 }

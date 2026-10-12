@@ -187,6 +187,8 @@ impl App {
         self.doc = doc;
         self.history = ude_core::History::default();
         self.selection.clear();
+        // Copied layers reference the previous document's strings and assets.
+        self.clipboard = ude_editor::Clipboard::default();
         self.hover = None;
         self.drag = None;
         self.panels.layers = ude_ui::LayersPanel::default();

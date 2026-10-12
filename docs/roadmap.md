@@ -23,9 +23,34 @@ green. Status is updated in this file as milestones land.
 | M11 | Figma import | `.fig` container, kiwi schema decode, tree rebuild, shapes/vectors/text/fills/images | corpus vs reference PNGs | **done** (unverified on real files): ZIP or bare `fig-kiwi`, deflate/zstd chunks, schema-driven Kiwi decode; pages, frames/sections, groups, components + expanded instances (single-level overrides), shapes, vector/boolean geometry, rich text runs, solid/gradient/image paints, strokes, effects, radii, masks, auto layout |
 | M12 | XD import | UCF zip, AGC → model, artboards, shapes, text, images | corpus vs reference PNGs | **done** (unverified on real files): UCF zip, manifest + resources, artboards and pasteboard, groups, symbols (expanded), rect/ellipse/circle/line/polygon/path/compound, text with ranged styles, solid/gradient/image fills, strokes, shadows, blurs |
 | M13 | Diagnostics + baselines | memory panel, debug panel, benchmark scenarios, first published numbers | MVP gate: [benchmark-plan.md](benchmark-plan.md) §5 | **done**: F12 diagnostics window (OS memory counters + internal accounting), headless scenarios with JSON output, all §5 targets met on the dev machine; fixed an idle redraw loop (see perf-log) |
-| M14 | Release packaging | release workflow: Windows msi/zip (signed), Linux AppImage/deb/rpm, CLI archives; Flatpak + winget manifests ([distribution.md](distribution.md)) | clean-machine install smoke test on the §7 matrix | next |
+| M14 | Release packaging | release workflow: Windows msi/zip (signed), Linux AppImage/deb/rpm, CLI archives; Flatpak + winget manifests ([distribution.md](distribution.md)) | clean-machine install smoke test on the §7 matrix | **done**: release.yml (MSI, setup exe, standalone exe, portable zip, AppImage, deb, rpm, Arch, bundle, CLI archives), verified by a manual dry run; signing optional |
 
 CI runs `fmt`, `clippy` and `test` on **Windows and Linux** for every change from M0 onward.
+
+## Known gaps after 0.1 (audit, 2026-10-12)
+
+Present in 0.1: open/import (.krt, Figma family, Sketch, XD, PSD/PSB, AI, PDF, SVG, PNG/JPEG/WebP),
+canvas (pan/zoom, selection, move/resize, snapping, guides), creation tools (frame, rectangle,
+ellipse, polygon, star, line, text), layers panel, inspector, undo/redo, save `.krt`, PNG/SVG
+export, code generation (HTML, CSS, Tailwind, React, Vue, tokens) via CLI and MCP, MCP server,
+Google Fonts download, diagnostics, release packages.
+
+Missing, in priority order:
+
+1. **Basic editing commands:** ~~copy/cut/paste, duplicate, group / ungroup, bring forward / send backward~~ (done in 0.1); still missing: paste between documents,
+   align and distribute, lock/hide from the canvas.
+2. **On-canvas text editing** (caret, selection, IME); text is edited in the inspector today.
+3. **Vector editing:** pen tool, node editing, boolean operations.
+4. **Rendering fidelity:** masks and clip groups, layer/background blur, inner shadows, PSD
+   effects, image fill transforms.
+5. **Components:** editing a component updates instances; variants; nested overrides.
+6. **Auto layout solver and constraints** (data is imported; resizing does not reflow).
+7. **Dev Mode in the app:** code panel, measurements, copyable values (codegen exists in CLI/MCP).
+8. **Export:** PDF, JPEG/WebP, export presets per layer, multi-page export.
+9. **Documents:** multiple tabs, autosave journal and crash recovery, recent files.
+10. **Round-trip export** to Figma/XD/PSD (phase 4), plugins and REST API.
+11. **Validation on real files:** the Figma, XD, Sketch and AI importers are tested on
+    synthetic files in the real formats only; a corpus of real files is needed.
 
 ## Phase 2: Professional editing
 Vector/Bézier editing and pen tool · boolean operations (`flo_curves` or a `kurbo`-based
@@ -42,5 +67,5 @@ See [dev-mode.md](dev-mode.md).
 
 ## Phase 4: Ecosystem
 Round-trip export (PSD first) · advanced PSD/XD/Figma features · WASM plugins · automation API
-(`ude-api`) + MCP server + REST · VS Code integration · PDF import · web exporters
+(`ude-api`) + REST (MCP server shipped in 0.1) · VS Code integration · PDF import (shipped in 0.1) · web exporters
 (WordPress/Elementor/Next.js), each as a separate optional crate.
