@@ -23,6 +23,7 @@ ude-editor = { path = "../editor" }
 serde_json = "1"
 ude-codegen = { path = "../codegen" }
 ude-format-psd = { path = "../formats/psd" }
+ude-format-fig = { path = "../formats/fig" }
 
 [lints]
 workspace = true

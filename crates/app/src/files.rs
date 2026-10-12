@@ -6,7 +6,9 @@ use ude_core::{Document, NodeKind};
 
 use crate::App;
 
-const OPENABLE: &[&str] = &["design", "psd", "psb", "svg", "png", "jpg", "jpeg", "webp"];
+const OPENABLE: &[&str] = &[
+    "design", "fig", "psd", "psb", "svg", "png", "jpg", "jpeg", "webp",
+];
 
 /// Loads a `.design` document or imports an image.
 pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
@@ -24,6 +26,14 @@ pub(crate) fn load_path(path: &Path) -> Result<Document, String> {
         "psd" | "psb" => {
             let bytes = std::fs::read(path).map_err(|e| err(&e))?;
             let im = ude_format_psd::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
+        "fig" => {
+            let bytes = std::fs::read(path).map_err(|e| err(&e))?;
+            let im = ude_format_fig::import(&bytes, &file_name(path)).map_err(|e| err(&e))?;
             for w in &im.warnings {
                 eprintln!("warning: {w}");
             }

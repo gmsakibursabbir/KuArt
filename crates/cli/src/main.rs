@@ -29,7 +29,7 @@ USAGE:
     design-editor-cli mcp              (MCP server on stdio, for AI agents)
     design-editor-cli --version
 
-Input: .design, .psd/.psb, .svg and images (.png .jpg .webp). Coming: .fig (M11), .xd (M12).
+Input: .design, .fig, .psd/.psb, .svg and images (.png .jpg .webp). Coming: .xd (M12).
 Output: .design, .png or .svg (first page).";
 
 fn main() -> ExitCode {
@@ -110,7 +110,18 @@ fn open(path: &Path) -> Result<Document, String> {
             }
             Ok(im.doc)
         }
-        "fig" => Err("Figma import is not implemented yet (milestone M11)".into()),
+        "fig" => {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let name = path
+                .file_name()
+                .map_or_else(|| "document".into(), |n| n.to_string_lossy().into_owned());
+            let im = ude_format_fig::import(&bytes, &name)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            for w in &im.warnings {
+                eprintln!("warning: {w}");
+            }
+            Ok(im.doc)
+        }
         "xd" => Err("Adobe XD import is not implemented yet (milestone M12)".into()),
         other => Err(format!("unsupported input format '.{other}'")),
     }
