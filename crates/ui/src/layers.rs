@@ -59,6 +59,100 @@ pub fn display_name(doc: &Document, n: &ude_core::Node) -> String {
     kind_name(&n.kind).to_owned()
 }
 
+/// Right-click menu of a layer row; edits apply to the selection (the row is selected first).
+#[allow(clippy::too_many_arguments)]
+fn layer_menu(
+    ui: &mut Ui,
+    id: NodeId,
+    label: &str,
+    visible: bool,
+    locked: bool,
+    flags: NodeFlags,
+    actions: &mut Vec<Action>,
+    rename: &mut Option<(NodeId, String)>,
+) {
+    use crate::Edit as E;
+    ui.set_width(200.0);
+    let item = |ui: &mut Ui, glyph: &str, text: &str, key: &str| {
+        let r = ui.add(
+            egui::Button::new(format!("{glyph}  {text}"))
+                .shortcut_text(key)
+                .frame(false),
+        );
+        let clicked = r.clicked();
+        if clicked {
+            ui.close();
+        }
+        clicked
+    };
+    if item(ui, icons::TYPE_OUTLINE, "Rename", "Double-click") {
+        *rename = Some((id, label.to_owned()));
+    }
+    ui.separator();
+    for (glyph, text, key, e) in [
+        (icons::COPY, "Copy", "Ctrl+C", E::Copy),
+        (icons::CLIPBOARD_PASTE, "Paste", "Ctrl+V", E::Paste),
+        (icons::COPY_PLUS, "Duplicate", "Ctrl+D", E::Duplicate),
+        (icons::TRASH_2, "Delete", "Del", E::Delete),
+    ] {
+        if item(ui, glyph, text, key) {
+            actions.push(Action::Edit(e));
+        }
+    }
+    ui.separator();
+    for (glyph, text, key, e) in [
+        (icons::GROUP, "Group", "Ctrl+G", E::Group),
+        (icons::UNGROUP, "Ungroup", "Ctrl+Shift+G", E::Ungroup),
+        (icons::SCAN_EYE, "Use as mask", "Ctrl+Alt+M", E::Mask),
+        (icons::COMBINE, "Flatten", "Ctrl+E", E::Flatten),
+        (
+            icons::BRING_TO_FRONT,
+            "Bring forward",
+            "Ctrl+]",
+            E::BringForward,
+        ),
+        (
+            icons::SEND_TO_BACK,
+            "Send backward",
+            "Ctrl+[",
+            E::SendBackward,
+        ),
+    ] {
+        if item(ui, glyph, text, key) {
+            actions.push(Action::Edit(e));
+        }
+    }
+    ui.separator();
+    let mut f = flags;
+    if item(
+        ui,
+        if visible { icons::EYE_OFF } else { icons::EYE },
+        if visible { "Hide" } else { "Show" },
+        "",
+    ) {
+        f.set(NodeFlags::VISIBLE, !visible);
+    }
+    if item(
+        ui,
+        if locked {
+            icons::LOCK_OPEN
+        } else {
+            icons::LOCK
+        },
+        if locked { "Unlock" } else { "Lock" },
+        "",
+    ) {
+        f.set(NodeFlags::LOCKED, !locked);
+    }
+    if f != flags {
+        actions.push(Action::Set {
+            id,
+            value: Prop::Flags(f),
+            merge_key: 0,
+        });
+    }
+}
+
 pub fn kind_name(k: &NodeKind) -> &'static str {
     match k {
         NodeKind::Frame => "Frame",
@@ -227,7 +321,9 @@ impl LayersPanel {
                         Sense::click(),
                     );
                     let selected = selection.contains(id);
-                    let row_hover = resp.hovered() || hover == Some(id);
+                    // The row rect, not `resp`: the eye/lock buttons on top of the row would
+                    // otherwise un-hover it and hide themselves.
+                    let row_hover = ui.rect_contains_pointer(rect) || hover == Some(id);
                     let p = ui.painter().clone();
                     if selected {
                         p.rect_filled(rect, CornerRadius::same(5), t.accent_soft);
@@ -348,6 +444,21 @@ impl LayersPanel {
                     if resp.hovered() {
                         actions.push(Action::Hover(Some(id)));
                     }
+                    if resp.secondary_clicked() && !selected {
+                        actions.push(Action::Select(vec![id]));
+                    }
+                    resp.context_menu(|ui| {
+                        layer_menu(
+                            ui,
+                            id,
+                            label,
+                            visible,
+                            locked,
+                            node.flags,
+                            actions,
+                            &mut rename,
+                        );
+                    });
                     if resp.double_clicked() {
                         rename = Some((id, label.to_owned()));
                     } else if resp.clicked() {

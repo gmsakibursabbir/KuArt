@@ -151,6 +151,10 @@ pub fn install_fonts(ctx: &egui::Context) {
     fonts
         .families
         .insert(FontFamily::Name(ICONS.into()), vec![ICONS.into()]);
+    // Icons also work inside ordinary text (menus, buttons): Lucide uses private-use codepoints.
+    if let Some(list) = fonts.families.get_mut(&FontFamily::Proportional) {
+        list.push(ICONS.into());
+    }
     ctx.set_fonts(fonts);
 }
 
