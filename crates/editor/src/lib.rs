@@ -6,7 +6,7 @@ pub mod selection;
 pub mod snap;
 pub mod transform;
 
-pub use create::{Create, Tool};
+pub use create::{Create, Tool, default_node};
 pub use selection::{Selection, SelectionMode, drill, hit_test, marquee_select, resolve_target};
 pub use snap::{SnapResult, Snapper};
 pub use transform::{Feedback, Gesture, HandleIndex, Modifiers};

@@ -8,6 +8,8 @@ use std::time::Instant;
 use ude_core::{Document, NodeKind};
 use ude_format_native::{Limits, inspect, load, save_to_path};
 
+mod mcp;
+
 /// Like `println!`, but a closed pipe (`... | head`) ends output quietly instead of panicking.
 macro_rules! out {
     ($($arg:tt)*) => {{
@@ -23,6 +25,8 @@ USAGE:
     design-editor-cli inspect <file>
     design-editor-cli convert <input> <output>
     design-editor-cli generate <output.design> [--nodes N] [--seed S]
+    design-editor-cli code <input> <html|css|tailwind|react|vue|tokens> [output]
+    design-editor-cli mcp              (MCP server on stdio, for AI agents)
     design-editor-cli --version
 
 Supported now: .design. Importers arrive in later milestones:
@@ -35,6 +39,10 @@ fn main() -> ExitCode {
         Some("inspect") if args.len() == 2 => cmd_inspect(Path::new(&args[1])),
         Some("convert") if args.len() == 3 => cmd_convert(Path::new(&args[1]), Path::new(&args[2])),
         Some("generate") if args.len() >= 2 => cmd_generate(&args[1..]),
+        Some("mcp") if args.len() == 1 => mcp::run(),
+        Some("code") if (3..=4).contains(&args.len()) => {
+            cmd_code(Path::new(&args[1]), &args[2], args.get(3).map(Path::new))
+        }
         Some("--version" | "-V") => {
             out!("design-editor-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -249,5 +257,29 @@ fn cmd_generate(args: &[String]) -> CliResult {
     let doc = ude_bench::generate(ude_bench::SynthSpec { nodes, seed });
     save_to_path(&doc, &out).map_err(|e| e.to_string())?;
     out!("wrote {} ({nodes} nodes, seed {seed})", out.display());
+    Ok(())
+}
+
+/// Design → code for the first page (`docs/dev-mode.md`).
+fn cmd_code(input: &Path, target: &str, output: Option<&Path>) -> CliResult {
+    let target = ude_codegen::Target::parse(target).ok_or_else(|| {
+        format!("unknown target '{target}' (html, css, tailwind, react, vue, tokens)")
+    })?;
+    let doc = open(input)?;
+    let page = *doc
+        .children(doc.root())
+        .first()
+        .ok_or("document has no pages")?;
+    let out = ude_codegen::generate(&doc, page, target)?;
+    for note in &out.notes {
+        eprintln!("note: {note}");
+    }
+    match output {
+        Some(path) => {
+            std::fs::write(path, out.code).map_err(|e| format!("{}: {e}", path.display()))?;
+            eprintln!("wrote {}", path.display());
+        }
+        None => out!("{}", out.code),
+    }
     Ok(())
 }

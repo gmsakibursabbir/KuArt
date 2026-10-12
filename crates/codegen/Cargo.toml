@@ -1,0 +1,15 @@
+[package]
+name = "ude-codegen"
+description = "Design to code: HTML, CSS, Tailwind, React, Vue and design tokens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ude-core = { path = "../core" }
+# Vector layers become inline SVG.
+ude-format-svg = { path = "../formats/svg" }
+
+[lints]
+workspace = true

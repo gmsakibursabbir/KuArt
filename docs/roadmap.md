@@ -18,6 +18,7 @@ green. Status is updated in this file as milestones land.
 | M7 | Images | asset store, lazy scaled decode, image cache + texture LRU | 6000×4000 shown at 300×200 holds ≤ 1 MB decoded | **done**: decode at needed mip level, 128 MB LRU cache, raster + image-fill rendering, PNG/JPG/WebP import; decode is synchronous (async later) |
 | M8 | Export | PNG (CPU backend) and SVG writer | golden-image tests | **done**: PNG (CPU render, 2x from the app) + SVG writer; CLI convert; app Open/Save/Save As/Export with native dialogs and unsaved marker |
 | M9 | SVG import | `usvg` mapping | W3C SVG subset corpus ≥ 90% at SSIM ≥ 0.98 | **done**: usvg importer (groups, paths, gradients, strokes, images, text as outlines; clip paths/masks/filters/patterns reported); export→import round trip matches the direct render |
+| — | MCP server + code generation | `design-editor-cli mcp` (create, edit, preview, save, generate code), `design-editor-cli code` | MCP tools tested over stdio; deterministic emitters | **done** (pulled forward from phase 3, see `mcp.md`, `dev-mode.md`) |
 | M10 | PSD import | layer tree, groups, raster (lazy RLE/ZIP), opacity/blend/visibility, clipping, raster masks, text (data + pixel fallback), preserved blocks | corpus renders match the merged image at SSIM ≥ 0.97 | next |
 | M11 | Figma import | `.fig` container, kiwi schema decode, tree rebuild, shapes/vectors/text/fills/images | corpus vs reference PNGs | |
 | M12 | XD import | UCF zip, AGC → model, artboards, shapes, text, images | corpus vs reference PNGs | |

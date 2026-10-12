@@ -1,6 +1,9 @@
 # Developer Mode and Code Generation
 
-Status: **accepted** · Phase 3 (data structures prepared from phase 1)
+Status: **in progress**: `ude-codegen` ships HTML, CSS, Tailwind, React, Vue and tokens emitters
+(auto layout → flex, inferred stacks, centred children, semantics, absolute fallback), used by
+`design-editor-cli code` and the MCP `generate_code` tool. Not yet: SCSS, grid inference, token
+linking to styles, the in-app code panel.
 
 Goal: select any element and get accurate measurements plus production-quality code. Dev Mode is
 lazy: `Option<Box<DevMode>>` is `None` until first opened, so there is no baseline RAM cost.
@@ -16,7 +19,8 @@ Selection (NodeIds) ─► 1 Normalize ─► 2 Layout inference ─► 3 Semant
 ```
 
 All stages consume the Universal Design Model only, so Figma, XD, PSD and SVG imports get
-identical Dev Mode features. The crate is `ude-codegen` and depends only on `ude-core`.
+identical Dev Mode features. The crate is `ude-codegen`; it depends on `ude-core` and on
+`ude-format-svg` (vector layers become inline SVG).
 
 ### 1.1 Normalize
 * Resolve instances against their components (with overrides) into a temporary view.

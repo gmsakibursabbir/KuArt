@@ -211,7 +211,8 @@ fn artboard_at(doc: &Document, index: &SpatialIndex, p: Point) -> Option<NodeId>
         .max_by(|&a, &b| ude_spatial::paint_order_cmp(doc, a, b))
 }
 
-fn default_node(doc: &mut Document, tool: Tool) -> Node {
+/// A new node as the `tool` creates it (default name, fills, text style), not yet in the tree.
+pub fn default_node(doc: &mut Document, tool: Tool) -> Node {
     let name = doc.strings.intern(tool.label());
     // Fills follow the mainstream defaults: light grey shapes, white frames, black text and lines.
     let grey = Paints::new(vec![Paint::solid(Color::from_rgba8(
