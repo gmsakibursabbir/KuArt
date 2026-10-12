@@ -396,7 +396,11 @@ impl App {
             } else {
                 ""
             };
-            w.set_title(&format!("{dirty}{} — KuArt", self.title));
+            if self.home {
+                w.set_title("KuArt");
+            } else {
+                w.set_title(&format!("{dirty}{} — KuArt", self.title));
+            }
         }
     }
 

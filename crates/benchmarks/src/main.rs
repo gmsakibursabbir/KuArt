@@ -279,6 +279,7 @@ pub fn panels_frame_ms(nodes: u32) -> (usize, f64) {
         panels.layers.toggle(frame);
     }
     let ctx = egui::Context::default();
+    ude_ui::theme::install_fonts(&ctx);
     let selection = ude_editor::Selection::default();
     let status = Status {
         title: "bench",

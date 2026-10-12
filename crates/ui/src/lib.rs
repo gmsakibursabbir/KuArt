@@ -291,7 +291,9 @@ impl Panels {
                     });
             });
 
-        (actions, root.available_rect_before_wrap())
+        let canvas = root.available_rect_before_wrap();
+        tool_pill(root.ctx(), canvas, status.tool, t, &mut actions);
+        (actions, canvas)
     }
 
     fn top_bar(
@@ -315,12 +317,7 @@ impl Panels {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     self.main_menu(ui, status, t, actions);
                     ui.add_space(6.0);
-                    for (tool, glyph) in TOOL_ICONS {
-                        let tip = format!("{}  {}", tool.label(), tool.shortcut());
-                        if icon_button(ui, t, glyph, &tip, status.tool == tool).clicked() {
-                            actions.push(Action::Tool(tool));
-                        }
-                    }
+                    ui.label(RichText::new("KuArt").strong().color(t.text_primary));
 
                     // Centre: document and page.
                     let page_name = doc.node(page).map_or("", |n| doc.strings.resolve(n.name));
@@ -583,6 +580,69 @@ fn diagnostics(root: &mut Ui, status: &Status<'_>, t: &Tokens) {
                     }
                 });
             ui.colored_label(t.text_muted, "F12 to close");
+        });
+}
+
+/// Floating tool bar centred at the bottom of the canvas (Figma UI3 style).
+fn tool_pill(
+    ctx: &egui::Context,
+    canvas: Rect,
+    current: Tool,
+    t: &Tokens,
+    actions: &mut Vec<Action>,
+) {
+    if canvas.width() < 120.0 || canvas.height() < 80.0 {
+        return;
+    }
+    egui::Area::new(egui::Id::new("tool_pill"))
+        .pivot(Align2::CENTER_BOTTOM)
+        .fixed_pos(egui::pos2(canvas.center().x, canvas.bottom() - 16.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(t.bg_panel)
+                .stroke(egui::Stroke::new(1.0_f32, t.border_subtle))
+                .corner_radius(14.0)
+                .inner_margin(egui::Margin::symmetric(6, 5))
+                .shadow(egui::Shadow {
+                    offset: [0, 4],
+                    blur: 16,
+                    spread: 0,
+                    color: egui::Color32::from_black_alpha(if t.dark { 120 } else { 40 }),
+                })
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 3.0;
+                        for (i, (tool, glyph)) in TOOL_ICONS.into_iter().enumerate() {
+                            // Separators between select, containers, shapes and text.
+                            if matches!(i, 1 | 2 | 7) {
+                                let (r, _) = ui.allocate_exact_size(
+                                    egui::vec2(9.0, 24.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().vline(
+                                    r.center().x,
+                                    r.y_range().shrink(3.0),
+                                    egui::Stroke::new(1.0_f32, t.border_subtle),
+                                );
+                            }
+                            let tip = format!("{}  {}", tool.label(), tool.shortcut());
+                            if widgets::icon_button_sized(
+                                ui,
+                                t,
+                                glyph,
+                                &tip,
+                                current == tool,
+                                34.0,
+                                17.0,
+                            )
+                            .clicked()
+                            {
+                                actions.push(Action::Tool(tool));
+                            }
+                        }
+                    });
+                });
         });
 }
 

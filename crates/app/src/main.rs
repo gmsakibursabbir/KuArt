@@ -24,6 +24,7 @@ mod files;
 mod google_fonts;
 mod recents;
 mod selection_ui;
+mod settings;
 mod tools;
 
 use std::path::PathBuf;
@@ -325,6 +326,12 @@ impl App {
         let tokens = self.panels.theme.tokens(system_dark);
         if self.applied_theme != Some((self.panels.theme, system_dark)) {
             theme::apply(&self.egui, tokens);
+            if self
+                .applied_theme
+                .is_some_and(|(t, _)| t != self.panels.theme)
+            {
+                settings::save_theme(self.panels.theme);
+            }
             self.applied_theme = Some((self.panels.theme, system_dark));
         }
         let renderer = self.backend.as_ref().map(Backend::name).unwrap_or_default();
@@ -1165,6 +1172,7 @@ fn main() -> std::process::ExitCode {
     };
     let home = options.file.is_none() && options.demo.is_none();
     let mut app = App::new(options, doc, title);
+    app.panels.theme = settings::load_theme();
     app.home = home;
     app.proxy = Some(event_loop.create_proxy());
     app.saved_revision = app.doc.revision();
