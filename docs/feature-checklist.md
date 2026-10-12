@@ -35,16 +35,16 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ~ Keyboard shortcuts and customization (shortcuts, no customization)
 
 ## B. Vector drawing and illustration
-- ✓ Selection tool · ✗ direct-selection (point) tool
-- ✗ Pen tool and Bézier curves
+- ✓ Selection tool · ✓ point editing (Enter or double-click a vector)
+- ✓ Pen tool and Bézier curves (P)
 - ✗ Pencil / freehand drawing
 - ~ Line, arrow and connector tools (line; arrows/connectors only imported)
 - ✓ Rectangle, rounded rectangle, ellipse and polygon
 - ~ Stars and custom shapes (star; no custom shape tool)
-- ✗ Vector point editing
-- ✗ Add, delete and convert anchor points
+- ✓ Vector point editing
+- ✓ Add (click a segment), delete and convert (double-click) anchor points
 - ~ Corner radius and independent corner controls (uniform edit; per-corner imported and drawn)
-- ✗ Smooth, sharp and mirrored points
+- ✓ Smooth, sharp and mirrored points (Alt breaks the mirror)
 - ✓ Open and closed paths (drawn and imported)
 - ✗ Path joining and splitting
 - ✓ Boolean union, subtract, intersect and exclude (live, Ctrl+Alt+U/S/I/X; Flatten Ctrl+E)
@@ -363,7 +363,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 | Area | Status |
 |---|---|
 | A. Canvas and documents | core, align/distribute, tabs and autosave done; missing search, version history |
-| B. Vector drawing | shapes done; missing pen, point editing, gradient editor |
+| B. Vector drawing | shapes, pen, point editing and booleans done; missing gradient editor, path join/split |
 | C. Raster | placement and export done; no image editing |
 | D. Typography | rendering and on-canvas editing done; missing text styles, lists |
 | E. Layout | data imported and exported to code; no live auto-layout or constraints |

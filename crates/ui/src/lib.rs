@@ -215,6 +215,8 @@ pub struct Status<'a> {
     pub tabs: &'a [TabInfo],
     /// Selected tab; `None` while the home screen is shown.
     pub active_tab: Option<usize>,
+    /// What the current tool or mode does (status bar).
+    pub hint: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -231,7 +233,7 @@ pub struct Panels {
     home: home::Home,
 }
 
-const TOOL_ICONS: [(Tool, &str); 8] = [
+const TOOL_ICONS: [(Tool, &str); 9] = [
     (Tool::Move, icons::MOUSE_POINTER_2),
     (Tool::Frame, icons::FRAME),
     (Tool::Rectangle, icons::SQUARE),
@@ -239,6 +241,7 @@ const TOOL_ICONS: [(Tool, &str); 8] = [
     (Tool::Polygon, icons::TRIANGLE),
     (Tool::Star, icons::STAR),
     (Tool::Line, icons::SLASH),
+    (Tool::Pen, icons::PEN_TOOL),
     (Tool::Text, icons::TYPE),
 ];
 
@@ -853,6 +856,11 @@ impl Panels {
                     if !selection.is_empty() {
                         ui.label(RichText::new(format!("· {} selected", selection.ids().len())).size(11.0).color(t.text_muted));
                     }
+                    if let Some(h) = status.hint {
+                        ui.add_space(8.0);
+                        ui.label(icon(icons::INFO, 12.0, t.accent));
+                        ui.label(RichText::new(h).size(11.0).color(t.text_secondary));
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(status.renderer).size(11.0).color(t.text_muted));
                         if !status.missing_fonts.is_empty() {
@@ -1156,7 +1164,10 @@ fn tool_pill(
                                     egui::Stroke::new(1.0_f32, t.border_subtle),
                                 );
                             }
-                            let tip = format!("{}  {}", tool.label(), tool.shortcut());
+                            let tip = match tool.shortcut() {
+                                Some(k) => format!("{}  {k}", tool.label()),
+                                None => tool.label().to_owned(),
+                            };
                             if widgets::icon_button_sized(
                                 ui,
                                 t,
@@ -1222,6 +1233,7 @@ mod tests {
             home,
             tabs: &[],
             active_tab: None,
+            hint: Some("Drag to draw"),
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

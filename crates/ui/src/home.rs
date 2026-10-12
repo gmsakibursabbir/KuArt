@@ -296,7 +296,21 @@ fn empty_state(ui: &mut Ui, t: &Tokens, nothing_yet: bool) {
         );
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
-            let total = FORMATS.len() as f32 * 64.0;
+            // Chip widths: measured label + 16 px margin, plus the spacing between chips.
+            let font = egui::FontId::monospace(11.0);
+            let gap = ui.spacing().item_spacing.x;
+            let total: f32 = FORMATS
+                .iter()
+                .map(|f| {
+                    let g = ui.painter().layout_no_wrap(
+                        (*f).to_owned(),
+                        font.clone(),
+                        t.text_secondary,
+                    );
+                    g.size().x + 16.0 + gap
+                })
+                .sum::<f32>()
+                - gap;
             ui.add_space(((ui.available_width() - total) / 2.0).max(0.0));
             for f in FORMATS {
                 egui::Frame::new()

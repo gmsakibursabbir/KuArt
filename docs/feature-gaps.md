@@ -27,7 +27,7 @@ Priority: **P0** blocks everyday use · **P1** expected by professionals · **P2
 | Feature | Figma / others | KuArt | Priority |
 |---|---|---|---|
 | Frame, rectangle, ellipse, polygon, star, line, text tools | ✓ | ✓ | — |
-| Pen tool, Bézier node editing, pencil | ✓ | ✗ | P0 |
+| Pen tool, Bézier node editing, pencil | ✓ | ✓ pen and point editing (no pencil yet) | P0 |
 | Arrow tool, line end caps (arrows, circles) | ✓ | ✗ | P1 |
 | Boolean operations (union, subtract, intersect, exclude) | ✓ | ✓ live, with Flatten | P0 |
 | Flatten, outline stroke, path offset | ✓ | ✗ | P1 |
@@ -150,6 +150,6 @@ Priority: **P0** blocks everyday use · **P1** expected by professionals · **P2
 1. UI redesign: Lucide icons, Kuduy lime (dark) and blue (light), menu, pages, layer toggles,
    home screen with recent files, Dev Mode panel with code and copy.
 2. Export compression options.
-3. P0 editing: align/distribute, on-canvas text, pen tool, masks rendering,
+3. P0 editing: align/distribute, on-canvas text, masks rendering,
    components that update, auto-layout reflow, autosave and recovery, drag-and-drop.
 4. P2P WebRTC collaboration (design in `docs/collaboration.md`).

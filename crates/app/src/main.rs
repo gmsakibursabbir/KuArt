@@ -18,11 +18,15 @@
 //! corner = rotate (Shift = 15° steps), arrows = nudge 1 (Shift = 10), Delete = delete,
 //! Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo, Esc while dragging = cancel.
 
+// A GUI app: Windows must not open a console window next to it.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod autosave;
 mod backend;
 mod camera;
 mod files;
 mod google_fonts;
+mod pen;
 mod recents;
 mod selection_ui;
 mod settings;
@@ -177,6 +181,8 @@ struct App {
     last_autosave: Instant,
     /// Text layer being edited on the canvas.
     editing: Option<text_edit::Editing>,
+    /// Pen drawing or point editing on the canvas.
+    path_edit: Option<pen::PathEdit>,
 }
 
 enum Drag {
@@ -251,6 +257,7 @@ impl App {
             last_input: Instant::now(),
             last_autosave: Instant::now(),
             editing: None,
+            path_edit: None,
             index,
             selection: Selection::default(),
             hover: None,
@@ -340,6 +347,7 @@ impl App {
         if self.home {
             recents::load_textures(&self.egui, &mut self.recents);
         }
+        let hint = self.hint();
         let state = self.egui_state.as_mut()?;
         let input = state.take_egui_input(window);
         let system_dark = window.theme() != Some(winit::window::Theme::Light);
@@ -374,6 +382,7 @@ impl App {
             home: self.home,
             tabs: &tab_infos,
             active_tab: if self.home { None } else { self.active_tab },
+            hint,
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -432,7 +441,10 @@ impl App {
                         Err(e) => eprintln!("edit failed: {e}"),
                     }
                 }
-                Action::Tool(tool) => self.tool = tool,
+                Action::Tool(tool) => {
+                    self.end_path_edit();
+                    self.tool = tool;
+                }
                 Action::Open => self.open_dialog(),
                 Action::Save => self.save(),
                 Action::Export => self.export_dialog(),
@@ -556,7 +568,19 @@ impl App {
             .iter()
             .map(|&(a, b)| (view.transform * a, view.transform * b))
             .collect();
+        if self.path_editing() {
+            // Points, not the resize box, are what can be dragged.
+            overlay.selection_box = None;
+            overlay.selected.clear();
+            overlay.hover = None;
+        }
         self.selection_box = overlay.selection_box.map(|o| o.quad);
+        let po = self.path_overlay(view.transform);
+        overlay.path = po.path;
+        overlay.path_anchors = po.anchors;
+        overlay.path_handles = po.handles;
+        overlay.path_rubber = po.rubber;
+        overlay.path_closing = po.closing;
         let [ar, ag, ab, _] = self.panels.theme.tokens(system_dark).accent.to_array();
         overlay.accent = Some(Color::from_rgba8(ar, ag, ab, 255));
         let (caret, text_selection) = self.text_overlay(view.transform);
@@ -635,6 +659,9 @@ impl App {
         if self.editing.is_some() && self.text_key(event) {
             return;
         }
+        if self.path_edit.is_some() && self.path_key(event) {
+            return;
+        }
         let PhysicalKey::Code(code) = event.physical_key else {
             return;
         };
@@ -675,6 +702,7 @@ impl App {
             && !alt
             && let Some(tool) = tools::tool_for_key(code)
         {
+            self.end_path_edit();
             self.tool = tool;
             self.update_cursor();
             return self.redraw();
@@ -687,6 +715,15 @@ impl App {
         match code {
             KeyCode::KeyO if ctrl => self.open_dialog(),
             KeyCode::KeyN if ctrl => self.new_document(),
+            KeyCode::Enter | KeyCode::NumpadEnter
+                if matches!(
+                    self.selection.ids(),
+                    [id] if matches!(self.doc.node(*id).map(|n| &n.kind), Some(NodeKind::Vector(_)))
+                ) =>
+            {
+                let id = self.selection.ids()[0];
+                self.begin_path_edit(id);
+            }
             KeyCode::Enter | KeyCode::NumpadEnter
                 if matches!(
                     self.selection.ids(),
@@ -960,6 +997,14 @@ impl App {
         if self.editing.is_some() && self.text_press() {
             return;
         }
+        let now = Instant::now();
+        let double = self.last_click.is_some_and(|(t, p)| {
+            now.duration_since(t) < DOUBLE_CLICK && (p - self.cursor).hypot() < 4.0
+        });
+        self.last_click = Some((now, self.cursor));
+        if (self.tool == Tool::Pen || self.path_edit.is_some()) && self.path_press(double) {
+            return;
+        }
         if self.tool != Tool::Move {
             return self.begin_create();
         }
@@ -968,11 +1013,6 @@ impl App {
             self.redraw();
             return;
         }
-        let now = Instant::now();
-        let double = self.last_click.is_some_and(|(t, p)| {
-            now.duration_since(t) < DOUBLE_CLICK && (p - self.cursor).hypot() < 4.0
-        });
-        self.last_click = Some((now, self.cursor));
 
         // Double-click on a selected text layer edits it on the canvas.
         if double
@@ -985,6 +1025,19 @@ impl App {
         {
             let id = *current;
             self.begin_text_edit(id, false);
+            return;
+        }
+        // Double-click on a selected vector edits its points.
+        if double
+            && let [current] = self.selection.ids()
+            && self.target_at(self.cursor, SelectionMode::Deep) == Some(*current)
+            && matches!(
+                self.doc.node(*current).map(|n| &n.kind),
+                Some(NodeKind::Vector(_))
+            )
+        {
+            let id = *current;
+            self.begin_path_edit(id);
             return;
         }
         // Double-click on a selected container drills one level towards the pointer.
@@ -1032,6 +1085,7 @@ impl App {
 
     fn on_left_release(&mut self) {
         self.text_release();
+        self.path_release();
         if self.marquee.take().is_some() {
             self.redraw();
         }
@@ -1051,6 +1105,9 @@ impl App {
         if self.panning {
             self.camera.pan += delta;
             self.redraw();
+            return;
+        }
+        if self.path_drag() {
             return;
         }
         if let Some(Drag::Pending { start }) = self.drag {

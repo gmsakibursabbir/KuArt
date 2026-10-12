@@ -352,6 +352,7 @@ impl App {
     pub(crate) fn replace_document(&mut self, mut doc: Document, path: Option<PathBuf>) {
         self.doc_id = crate::autosave::new_id();
         self.end_text_edit();
+        self.path_edit = None;
         self.page = doc.children(doc.root()).iter().copied().find(|&id| {
             doc.node(id)
                 .is_some_and(|n| matches!(n.kind, NodeKind::Page))

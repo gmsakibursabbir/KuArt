@@ -61,6 +61,11 @@ pub fn build_overlay(
         accent: None,
         pins: Vec::new(),
         caret: None,
+        path: None,
+        path_anchors: Vec::new(),
+        path_handles: Vec::new(),
+        path_rubber: None,
+        path_closing: None,
         text_selection: Vec::new(),
     }
 }

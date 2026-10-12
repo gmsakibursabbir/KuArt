@@ -24,11 +24,12 @@ pub enum Tool {
     Polygon,
     Star,
     Line,
+    Pen,
     Text,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 8] = [
+    pub const ALL: [Tool; 9] = [
         Tool::Move,
         Tool::Frame,
         Tool::Rectangle,
@@ -36,6 +37,7 @@ impl Tool {
         Tool::Polygon,
         Tool::Star,
         Tool::Line,
+        Tool::Pen,
         Tool::Text,
     ];
 
@@ -48,22 +50,24 @@ impl Tool {
             Tool::Polygon => "Polygon",
             Tool::Star => "Star",
             Tool::Line => "Line",
+            Tool::Pen => "Pen",
             Tool::Text => "Text",
         }
     }
 
     /// Single-key shortcut, as in mainstream design tools.
-    pub fn shortcut(self) -> char {
-        match self {
+    pub fn shortcut(self) -> Option<char> {
+        Some(match self {
             Tool::Move => 'V',
             Tool::Frame => 'F',
             Tool::Rectangle => 'R',
             Tool::Ellipse => 'O',
-            Tool::Polygon => 'P',
+            Tool::Polygon => return None,
             Tool::Star => 'S',
             Tool::Line => 'L',
+            Tool::Pen => 'P',
             Tool::Text => 'T',
-        }
+        })
     }
 }
 
@@ -204,7 +208,7 @@ fn drag_rect(start: Point, p: Point, mods: Modifiers) -> Rect {
 }
 
 /// Topmost artboard containing `p`: new layers go inside it.
-fn artboard_at(doc: &Document, index: &SpatialIndex, p: Point) -> Option<NodeId> {
+pub fn artboard_at(doc: &Document, index: &SpatialIndex, p: Point) -> Option<NodeId> {
     index
         .query_point(p.x as f32, p.y as f32, 0.0)
         .filter(|&id| doc.is_artboard(id) && contains_point(doc, id, p.x, p.y, 0.0))
@@ -237,8 +241,13 @@ pub fn default_node(doc: &mut Document, tool: Tool) -> Node {
             name,
         )
         .with_fills(grey),
-        Tool::Line => {
-            let mut n = Node::new(NodeKind::Line, name);
+        Tool::Line | Tool::Pen => {
+            let kind = if tool == Tool::Pen {
+                NodeKind::Vector(Default::default())
+            } else {
+                NodeKind::Line
+            };
+            let mut n = Node::new(kind, name);
             n.ext_mut().strokes = Some(Box::new(Stroke {
                 paints: black,
                 width: 1.0,

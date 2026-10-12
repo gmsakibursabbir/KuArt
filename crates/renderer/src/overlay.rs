@@ -37,6 +37,13 @@ pub struct Overlay {
     /// Text being edited: caret segment and selection quads (device space).
     pub caret: Option<(Point, Point)>,
     pub text_selection: Vec<[Point; 4]>,
+    /// Path being drawn or edited (device space): outline, points (selected?), handle lines,
+    /// the pen's preview segment, and the first point when a click would close the path.
+    pub path: Option<BezPath>,
+    pub path_anchors: Vec<(Point, bool)>,
+    pub path_handles: Vec<(Point, Point)>,
+    pub path_rubber: Option<BezPath>,
+    pub path_closing: Option<Point>,
 }
 
 impl Overlay {
@@ -49,6 +56,7 @@ impl Overlay {
             && self.pins.is_empty()
             && self.caret.is_none()
             && self.text_selection.is_empty()
+            && self.path.is_none()
     }
 }
 
@@ -107,6 +115,7 @@ pub fn paint_overlay(o: &Overlay, p: &mut impl Painter) {
             &BrushSpec::Solid(Color::from_rgba8(0x0A, 0x0A, 0x0A, 0xFF)),
         );
     }
+    paint_path(o, p, accent, scale);
     if let Some(m) = o.marquee {
         let fill = BrushSpec::Solid(accent.multiply_alpha(0.10));
         p.fill(Affine::IDENTITY, &Geom::Rect(m), Fill::NonZero, &fill, None);
@@ -149,6 +158,44 @@ pub fn paint_overlay(o: &Overlay, p: &mut impl Painter) {
             p.fill(Affine::IDENTITY, &Geom::Rect(r), Fill::NonZero, &fill, None);
             p.stroke(Affine::IDENTITY, &Geom::Rect(r), line, &border);
         }
+    }
+}
+
+fn paint_path(o: &Overlay, p: &mut impl Painter, accent: Color, scale: f64) {
+    let solid = BrushSpec::Solid(accent);
+    if let Some(path) = &o.path {
+        p.stroke(Affine::IDENTITY, &Geom::Path(path), scale, &solid);
+    }
+    if let Some(r) = &o.path_rubber {
+        let faint = BrushSpec::Solid(accent.multiply_alpha(0.6));
+        p.stroke(Affine::IDENTITY, &Geom::Path(r), scale, &faint);
+    }
+    let white = BrushSpec::Solid(Color::WHITE);
+    for &(a, h) in &o.path_handles {
+        let mut l = BezPath::new();
+        l.move_to(a);
+        l.line_to(h);
+        p.stroke(Affine::IDENTITY, &Geom::Path(&l), scale, &solid);
+        let e = vello::kurbo::Ellipse::new(h, (3.5 * scale, 3.5 * scale), 0.0);
+        p.fill(
+            Affine::IDENTITY,
+            &Geom::Ellipse(e),
+            Fill::NonZero,
+            &white,
+            None,
+        );
+        p.stroke(Affine::IDENTITY, &Geom::Ellipse(e), scale, &solid);
+    }
+    for &(a, selected) in &o.path_anchors {
+        let r = Rect::from_center_size(a, (7.0 * scale, 7.0 * scale));
+        let fill = if selected { &solid } else { &white };
+        p.fill(Affine::IDENTITY, &Geom::Rect(r), Fill::NonZero, fill, None);
+        p.stroke(Affine::IDENTITY, &Geom::Rect(r), scale, &solid);
+    }
+    if let Some(c) = o.path_closing {
+        // A ring around the first point: clicking closes the shape.
+        let e = vello::kurbo::Ellipse::new(c, (8.0 * scale, 8.0 * scale), 0.0);
+        p.stroke(Affine::IDENTITY, &Geom::Ellipse(e), 1.5 * scale, &solid);
     }
 }
 

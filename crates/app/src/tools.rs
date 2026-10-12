@@ -175,5 +175,5 @@ pub(crate) fn tool_for_key(code: winit::keyboard::KeyCode) -> Option<Tool> {
         K::KeyT => 'T',
         _ => return None,
     };
-    Tool::ALL.into_iter().find(|t| t.shortcut() == c)
+    Tool::ALL.into_iter().find(|t| t.shortcut() == Some(c))
 }
