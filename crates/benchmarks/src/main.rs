@@ -285,6 +285,8 @@ pub fn panels_frame_ms(nodes: u32) -> (usize, f64) {
         can_redo: false,
         tool: ude_editor::Tool::Move,
         missing_fonts: &[],
+        missing_families: &[],
+        font_status: None,
     };
     let mut run = || {
         let input = egui::RawInput {

@@ -19,6 +19,7 @@
 mod backend;
 mod camera;
 mod files;
+mod google_fonts;
 mod selection_ui;
 mod tools;
 
@@ -45,7 +46,7 @@ use ude_ui::{Action, Panels, Status, ThemeChoice, egui, theme};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
@@ -137,6 +138,10 @@ struct App {
     /// Canvas area left between the panels, in device pixels.
     canvas: Rect,
     panel_hover: Option<NodeId>,
+    /// Wakes the event loop from background work (font downloads).
+    proxy: Option<EventLoopProxy<AppEvent>>,
+    /// Progress or result of the last font download, shown in the status bar.
+    font_status: Option<String>,
     applied_theme: Option<(ThemeChoice, bool)>,
     /// Document revision at the last save (or open); differs when there are unsaved changes.
     saved_revision: u64,
@@ -194,6 +199,8 @@ impl App {
             panels: Panels::default(),
             canvas: Rect::ZERO,
             panel_hover: None,
+            proxy: None,
+            font_status: None,
             applied_theme: None,
             saved_revision: 0,
             shown_dirty: false,
@@ -288,7 +295,9 @@ impl App {
             self.applied_theme = Some((self.panels.theme, system_dark));
         }
         let renderer = self.backend.as_ref().map(Backend::name).unwrap_or_default();
-        let missing = self.caches.text.missing_fonts();
+        let missing_owned = self.caches.text.missing_fonts();
+        let missing: Vec<&str> = missing_owned.iter().map(String::as_str).collect();
+        let families = self.caches.text.missing_families();
         let status = Status {
             title: &self.title,
             zoom: self.camera.zoom,
@@ -297,6 +306,8 @@ impl App {
             can_redo: self.history.can_redo(),
             tool: self.tool,
             missing_fonts: &missing,
+            missing_families: &families,
+            font_status: self.font_status.as_deref(),
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -354,6 +365,7 @@ impl App {
                 Action::Open => self.open_dialog(),
                 Action::Save => self.save(),
                 Action::Export => self.export_dialog(),
+                Action::DownloadFont(family) => self.download_font(family),
                 Action::SetText {
                     id,
                     content,
@@ -898,7 +910,13 @@ impl App {
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<AppEvent> for App {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
+        match event {
+            AppEvent::FontDownloaded { family, result } => self.font_downloaded(family, result),
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -1055,7 +1073,7 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
-    let event_loop = match EventLoop::new() {
+    let event_loop = match EventLoop::<AppEvent>::with_user_event().build() {
         Ok(el) => el,
         Err(e) => {
             eprintln!("error: cannot start the event loop: {e}");
@@ -1063,6 +1081,7 @@ fn main() -> std::process::ExitCode {
         }
     };
     let mut app = App::new(options, doc, title);
+    app.proxy = Some(event_loop.create_proxy());
     app.saved_revision = app.doc.revision();
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("error: {e}");
@@ -1076,4 +1095,48 @@ fn window_icon() -> Option<winit::window::Icon> {
     const SIZE: u32 = 64;
     let rgba = include_bytes!(concat!(env!("OUT_DIR"), "/window_icon.rgba"));
     winit::window::Icon::from_rgba(rgba.to_vec(), SIZE, SIZE).ok()
+}
+
+/// Results of background work, delivered to the event loop.
+pub(crate) enum AppEvent {
+    FontDownloaded {
+        family: String,
+        result: Result<Vec<PathBuf>, String>,
+    },
+}
+
+impl App {
+    /// Starts a Google Fonts download for `family` on a background thread.
+    fn download_font(&mut self, family: String) {
+        let (Some(proxy), Some(dir)) = (self.proxy.clone(), ude_core::paths::user_fonts_dir())
+        else {
+            self.font_status = Some("No user fonts folder on this system".into());
+            return;
+        };
+        self.font_status = Some(format!("Downloading {family} from Google Fonts…"));
+        std::thread::spawn(move || {
+            let result = google_fonts::download(&family, &dir);
+            let _ = proxy.send_event(AppEvent::FontDownloaded { family, result });
+        });
+        self.redraw();
+    }
+
+    fn font_downloaded(&mut self, family: String, result: Result<Vec<PathBuf>, String>) {
+        self.font_status = Some(match result {
+            Ok(paths) => {
+                let faces: usize = paths
+                    .iter()
+                    .filter_map(|p| std::fs::read(p).ok())
+                    .map(|b| self.caches.text.add_font_data(b))
+                    .sum();
+                // Text re-shapes with the new font: drop the cached frame.
+                if let Some(b) = &mut self.backend {
+                    b.invalidate();
+                }
+                format!("Installed {family} ({faces} styles)")
+            }
+            Err(e) => e,
+        });
+        self.redraw();
+    }
 }

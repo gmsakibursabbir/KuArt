@@ -24,6 +24,9 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
     let mut opt = usvg::Options::default();
     // System fonts are needed to turn <text> into outlines.
     opt.fontdb_mut().load_system_fonts();
+    if let Some(dir) = ude_core::paths::user_fonts_dir() {
+        opt.fontdb_mut().load_fonts_dir(dir);
+    }
     let tree = usvg::Tree::from_data(bytes, &opt).map_err(|e| e.to_string())?;
 
     let mut doc = Document::new();

@@ -722,6 +722,12 @@ mod tests {
             "laid out with a fallback font: {w}x{h}"
         );
         assert_eq!(engine.missing_fonts(), vec!["NoSuchFont KuArt Test"]);
+        assert_eq!(engine.missing_families(), vec!["NoSuchFont KuArt Test"]);
+        assert_eq!(
+            crate::text::face_name("Inter", 600, true),
+            "Inter SemiBold Italic"
+        );
+        assert_eq!(crate::text::face_name("Inter", 400, false), "Inter");
 
         let root = doc.root();
         let page = doc

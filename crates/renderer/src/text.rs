@@ -22,26 +22,95 @@ pub struct TextEngine {
     fonts: FontContext,
     layouts: LayoutContext<u16>,
     cache: HashMap<u64, Layout<u16>>,
-    missing: HashSet<String>,
+    /// Missing faces as (family, weight, italic), checked once each.
+    checked: HashSet<(String, u16, bool)>,
+    missing: Vec<(String, u16, bool)>,
 }
 
 impl Default for TextEngine {
+    /// System fonts plus the user fonts folder ([`ude_core::paths::user_fonts_dir`]).
     fn default() -> Self {
-        Self {
+        let mut engine = Self {
             fonts: FontContext::new(),
             layouts: LayoutContext::new(),
             cache: HashMap::new(),
-            missing: HashSet::new(),
+            checked: HashSet::new(),
+            missing: Vec::new(),
+        };
+        if let Some(dir) = ude_core::paths::user_fonts_dir()
+            && let Ok(entries) = std::fs::read_dir(dir)
+        {
+            for path in entries.flatten().map(|e| e.path()) {
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if matches!(ext.as_str(), "ttf" | "otf" | "ttc")
+                    && let Ok(bytes) = std::fs::read(&path)
+                {
+                    engine.add_font_data(bytes);
+                }
+            }
         }
+        engine
     }
 }
 
 impl TextEngine {
-    /// Font families referenced by the document but not installed (drawn with a fallback).
-    pub fn missing_fonts(&self) -> Vec<&str> {
-        let mut v: Vec<&str> = self.missing.iter().map(String::as_str).collect();
+    /// Missing font faces as display names, e.g. "Inter SemiBold Italic". Text using them
+    /// is drawn with a fallback; the original font name is kept in the document.
+    pub fn missing_fonts(&self) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .missing
+            .iter()
+            .map(|(f, w, i)| face_name(f, *w, *i))
+            .collect();
         v.sort_unstable();
+        v.dedup();
         v
+    }
+
+    /// Families with at least one missing face (what a font download would fetch).
+    pub fn missing_families(&self) -> Vec<&str> {
+        let mut v: Vec<&str> = self.missing.iter().map(|(f, _, _)| f.as_str()).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
+    /// Registers font file bytes (TTF/OTF/TTC). Returns the number of faces added.
+    /// Missing-font checks and cached layouts are reset so text re-shapes with the new font.
+    pub fn add_font_data(&mut self, bytes: Vec<u8>) -> usize {
+        let added: usize = self
+            .fonts
+            .collection
+            .register_fonts(
+                parley::fontique::Blob::new(std::sync::Arc::new(bytes)),
+                None,
+            )
+            .iter()
+            .map(|(_, faces)| faces.len())
+            .sum();
+        if added > 0 {
+            self.checked.clear();
+            self.missing.clear();
+            self.cache.clear();
+        }
+        added
+    }
+
+    /// Is this face available (exact weight within ±50, a variable weight axis, matching style)?
+    fn has_face(&mut self, family: &str, weight: u16, italic: bool) -> bool {
+        let Some(info) = self.fonts.collection.family_by_name(family) else {
+            return false;
+        };
+        info.fonts().iter().any(|f| {
+            let weight_ok =
+                f.has_weight_axis() || (f.weight().value() - f32::from(weight)).abs() <= 50.0;
+            let style_ok = italic != matches!(f.style(), parley::fontique::FontStyle::Normal);
+            weight_ok && style_ok
+        })
     }
 
     /// Laid-out size of `text` for `box_width` (used for auto-sized text boxes).
@@ -59,11 +128,12 @@ impl TextEngine {
             }
             for s in text.styles.iter() {
                 let family = strings.resolve(s.family);
-                if !family.is_empty()
-                    && !self.missing.contains(family)
-                    && self.fonts.collection.family_by_name(family).is_none()
-                {
-                    self.missing.insert(family.to_owned());
+                let face = (family.to_owned(), s.weight, s.italic);
+                if !family.is_empty() && !self.checked.contains(&face) {
+                    if !self.has_face(family, s.weight, s.italic) {
+                        self.missing.push(face.clone());
+                    }
+                    self.checked.insert(face);
                 }
             }
             let mut b = self
@@ -220,4 +290,25 @@ fn layout_key(text: &TextData, strings: &Interner, width: f32) -> u64 {
         format!("{:?}{:?}", s.line_height, s.letter_spacing).hash(&mut h);
     }
     h.finish()
+}
+
+/// "Inter SemiBold Italic"-style face name for user messages.
+pub fn face_name(family: &str, weight: u16, italic: bool) -> String {
+    let w = match weight {
+        0..=149 => "Thin",
+        150..=249 => "ExtraLight",
+        250..=349 => "Light",
+        350..=449 => "Regular",
+        450..=549 => "Medium",
+        550..=649 => "SemiBold",
+        650..=749 => "Bold",
+        750..=849 => "ExtraBold",
+        _ => "Black",
+    };
+    match (w, italic) {
+        ("Regular", false) => family.to_owned(),
+        ("Regular", true) => format!("{family} Italic"),
+        (w, false) => format!("{family} {w}"),
+        (w, true) => format!("{family} {w} Italic"),
+    }
 }

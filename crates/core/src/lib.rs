@@ -17,6 +17,7 @@ pub mod id;
 pub mod intern;
 pub mod layout;
 pub mod memory;
+pub mod paths;
 pub mod scene;
 pub mod styles;
 pub mod typography;

@@ -37,6 +37,8 @@ pub enum Action {
     Open,
     Save,
     Export,
+    /// Download a missing font family from Google Fonts (user-initiated).
+    DownloadFont(String),
     Undo,
     Redo,
     ZoomToFit,
@@ -52,6 +54,10 @@ pub struct Status<'a> {
     pub tool: Tool,
     /// Font families used by the document but not installed.
     pub missing_fonts: &'a [&'a str],
+    /// Families of the missing faces (each gets a Google Fonts download button).
+    pub missing_families: &'a [&'a str],
+    /// Progress or result of the last font download.
+    pub font_status: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -155,6 +161,18 @@ impl Panels {
                             let list = status.missing_fonts.join(", ");
                             ui.colored_label(t.warning, format!("⚠ Not installed: {list}"))
                                 .on_hover_text("Drawn with a fallback font. The original font name is kept when saving.");
+                            for family in status.missing_families {
+                                if ui
+                                    .small_button(format!("Get {family}"))
+                                    .on_hover_text("Download from Google Fonts into the KuArt fonts folder")
+                                    .clicked()
+                                {
+                                    actions.push(Action::DownloadFont((*family).to_owned()));
+                                }
+                            }
+                        }
+                        if let Some(s) = status.font_status {
+                            ui.label(RichText::new(s).color(t.text_muted));
                         }
                     });
                 });
@@ -222,6 +240,8 @@ mod tests {
             can_redo: false,
             tool: ude_editor::Tool::Move,
             missing_fonts: &[],
+            missing_families: &[],
+            font_status: None,
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

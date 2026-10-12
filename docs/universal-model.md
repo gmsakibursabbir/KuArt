@@ -163,6 +163,11 @@ Missing fonts: the renderer asks `fontique` for each `(family, weight, italic)`.
 a diagnostic such as `⚠ Inter SemiBold is not installed` and a fallback face. The style keeps the
 original family, so saving never rewrites the font name.
 
+Font sources: system fonts, plus every TTF/OTF/TTC in the user fonts folder (`%APPDATA%KuArtonts`
+on Windows, `$XDG_DATA_HOME/kuart/fonts` or `~/.local/share/kuart/fonts` on Linux). The status
+bar lists missing faces by name and offers "Get {family}", which downloads that family from Google
+Fonts into the user fonts folder. KuArt goes online only on that click.
+
 For PSD text layers, the importer keeps the layer's pre-rendered pixels as a fallback asset, so the
 document looks right before the text is edited, even without the font installed.
 
