@@ -56,6 +56,17 @@ fn sample_pdf() -> Vec<u8> {
             op("ET", vec![]),
             op("W", vec![]),
             op("n", vec![]),
+            // A clip: the red square is masked by the 20×20 clip rectangle.
+            op("q", vec![]),
+            op("re", vec![n(100.0), n(50.0), n(20.0), n(20.0)]),
+            op("W", vec![]),
+            op("n", vec![]),
+            op("rg", vec![n(1.0), n(0.0), n(0.0)]),
+            op("re", vec![n(90.0), n(40.0), n(50.0), n(50.0)]),
+            op("f", vec![]),
+            op("Q", vec![]),
+            op("re", vec![n(0.0), n(0.0), n(5.0), n(5.0)]),
+            op("f", vec![]),
         ],
     };
     let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
@@ -93,7 +104,7 @@ fn imports_paths_colours_forms_and_text() {
         "inherited MediaBox"
     );
     let kids = doc.children(frame);
-    assert_eq!(kids.len(), 4, "rect, line, form square, text");
+    assert_eq!(kids.len(), 6, "rect, line, form square, text, clip group, square");
 
     // y-up → y-down: the rect at y 60..90 lands at 10..40 from the top.
     let rect = doc.node(kids[0]).unwrap();
@@ -137,11 +148,17 @@ fn imports_paths_colours_forms_and_text() {
         "{o:?}"
     );
 
+    // The clip became a group masked by its first layer; drawing after Q is outside it.
+    let clip = kids[4];
+    let inside = doc.children(clip);
+    assert_eq!(inside.len(), 2);
     assert!(
-        im.warnings.iter().any(|w| w.contains("clipping")),
-        "{:?}",
-        im.warnings
+        doc.node(inside[0])
+            .unwrap()
+            .flags
+            .contains(ude_core::NodeFlags::IS_MASK)
     );
+    assert!(doc.node(kids[5]).is_some(), "the square after Q is back on the page");
 }
 
 #[test]

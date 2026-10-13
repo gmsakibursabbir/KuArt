@@ -100,7 +100,6 @@ pub fn import(bytes: &[u8], name: &str, illustrator: bool) -> Result<Imported, S
 
 #[derive(Default)]
 struct Warnings {
-    clips: usize,
     patterns: usize,
     shadings: usize,
     images: usize,
@@ -115,10 +114,6 @@ impl Warnings {
                 w.push(format!("{n} {msg}"));
             }
         };
-        add(
-            self.clips,
-            "clipping path(s) ignored (content may extend past clip groups)",
-        );
         add(
             self.patterns,
             "pattern or gradient fill(s) drawn as a flat colour",
@@ -144,6 +139,9 @@ struct Gs {
     size: f32,
     char_spacing: f32,
     leading: f32,
+    /// Layer that receives drawing: the page, or the group of the innermost clipping path
+    /// (saved and restored with the rest of the state by q/Q).
+    parent: Option<NodeId>,
 }
 
 struct State {
@@ -155,6 +153,8 @@ struct State {
     cur: Point,
     text_matrix: Affine,
     line_matrix: Affine,
+    /// W/W* seen: the next painting operator also sets the clip, with this rule.
+    clip: Option<FillRule>,
 }
 
 impl State {
@@ -172,6 +172,7 @@ impl State {
                 size: 12.0,
                 char_spacing: 0.0,
                 leading: 0.0,
+                parent: None,
             },
             stack: Vec::new(),
             path: PathBuilder::default(),
@@ -179,6 +180,7 @@ impl State {
             cur: Point::new(0.0, 0.0),
             text_matrix: Affine::IDENTITY,
             line_matrix: Affine::IDENTITY,
+            clip: None,
         }
     }
     fn point(&self, x: f32, y: f32) -> Point {
@@ -312,8 +314,10 @@ impl<'p> Builder<'p> {
     ) -> Result<(), String> {
         let ops =
             lopdf::content::Content::decode(content).map_err(|e| format!("page content: {e}"))?;
+        let outer = st.gs.parent.replace(parent);
         for op in &ops.operations {
             let o = &op.operands;
+            let parent = st.gs.parent.unwrap_or(parent);
             match op.operator.as_str() {
                 "q" => st.stack.push(st.gs.clone()),
                 "Q" => {
@@ -430,6 +434,12 @@ impl<'p> Builder<'p> {
                     }
                     let path = std::mem::take(&mut st.path).build();
                     let had = std::mem::replace(&mut st.has_path, false);
+                    let clip = st.clip.take();
+                    let mut parent = parent;
+                    if let Some(clip_rule) = clip.filter(|_| had) {
+                        parent = self.clip_group(&path, clip_rule, parent)?;
+                        st.gs.parent = Some(parent);
+                    }
                     if !had || op_name == "n" {
                         continue;
                     }
@@ -442,7 +452,8 @@ impl<'p> Builder<'p> {
                     };
                     self.paint_path(path, rule, fill, stroke, st, parent)?;
                 }
-                "W" | "W*" => self.warnings.clips += 1,
+                "W" => st.clip = Some(FillRule::NonZero),
+                "W*" => st.clip = Some(FillRule::EvenOdd),
                 "sh" => self.warnings.shadings += 1,
                 "Do" => {
                     let Some(name) = o.first().and_then(|n| n.as_name().ok()) else {
@@ -529,7 +540,39 @@ impl<'p> Builder<'p> {
                 _ => {}
             }
         }
+        st.gs.parent = outer;
         Ok(())
+    }
+
+    /// A group, inside `parent`, whose bottom layer masks everything drawn into it.
+    fn clip_group(
+        &mut self,
+        path: &ude_core::PathData,
+        rule: FillRule,
+        parent: NodeId,
+    ) -> Result<NodeId, String> {
+        let name = self.doc.strings.intern("Clip group");
+        let group = self
+            .doc
+            .build_child(parent, Node::new(NodeKind::Group, name))
+            .map_err(|e| e.to_string())?;
+        let b = path.bounds();
+        let mut mask = Node::new(
+            NodeKind::Vector(Arc::new(VectorData {
+                paths: Box::new([VectorPath {
+                    path: translate_path(path, -b.x0, -b.y0),
+                    fill_rule: rule,
+                }]),
+            })),
+            self.doc.strings.intern("Clip"),
+        )
+        .with_transform(Affine::translate(b.x0, b.y0))
+        .with_size(b.width(), b.height());
+        mask.flags.set(ude_core::NodeFlags::IS_MASK, true);
+        self.doc
+            .build_child(group, mask)
+            .map_err(|e| e.to_string())?;
+        Ok(group)
     }
 
     fn paint_path(
