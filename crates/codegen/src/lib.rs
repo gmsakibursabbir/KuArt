@@ -106,10 +106,14 @@ pub fn generate(doc: &Document, id: NodeId, target: Target) -> Result<Output, St
         Target::Vue => emit::vue(&root),
         Target::Tokens => emit::tokens(&root),
     };
-    Ok(Output {
-        code,
-        notes: b.notes,
-    })
+    // Each note once, in first-seen order.
+    let mut notes: Vec<String> = Vec::new();
+    for n in b.notes {
+        if !notes.contains(&n) {
+            notes.push(n);
+        }
+    }
+    Ok(Output { code, notes })
 }
 
 /// One element of the code IR.
