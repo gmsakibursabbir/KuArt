@@ -1,4 +1,4 @@
-//! `snapshot <file.krt> <out.png> [--light] [--select] [--home] [WIDTHxHEIGHT]`: renders the
+//! `snapshot <file.krt> <out.png> [--light] [--select] [--home] [--dev] [WIDTHxHEIGHT]`: renders the
 //! editor window (panels, canvas fitted to the page) offscreen to a PNG, the same way the app
 //! does on the CPU backend. For checking the interface without driving a real window.
 
@@ -13,7 +13,8 @@ fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (Some(input), Some(out)) = (args.first(), args.get(1)) else {
         return Err(
-            "usage: snapshot <file.krt> <out.png> [--light] [--select] [--home] [WxH]".into(),
+            "usage: snapshot <file.krt> <out.png> [--light] [--select] [--home] [--dev] [WxH]"
+                .into(),
         );
     };
     let flag = |f: &str| args.iter().any(|a| a == f);
@@ -39,6 +40,7 @@ fn main() -> Result<(), String> {
     let mut caches = RenderCaches::default();
     let fonts = caches.text.family_names();
     let mut panels = Panels::default();
+    panels.dev_mode = flag("--dev");
     let mut selection = ude_editor::Selection::default();
     if flag("--select")
         && let Some(&first) = doc.children(page).first()

@@ -304,8 +304,8 @@ impl Builder<'_> {
                 }
             }
             "text" => match self.text(o, style) {
-                Some((n, dy)) => {
-                    transform = mul(transform, Affine::translate(0.0, dy));
+                Some((n, (dx, dy))) => {
+                    transform = mul(transform, Affine::translate(dx, dy));
                     n
                 }
                 None => return Ok(()),
@@ -333,8 +333,31 @@ impl Builder<'_> {
         }
         if !matches!(node.kind, NodeKind::Group | NodeKind::Text(_)) {
             let size = (node.size.w, node.size.h);
-            if let Some(fill) = style.get("fill") {
+            // Video fills keep their poster frame as an image fill (the video is not played).
+            let media = o.pointer("/shape/meta/ux/mediaFill");
+            if let Some(fill) = style.get("fill").or(media) {
                 node.fills = self.paints(fill, size);
+            }
+            // Frosted glass: a background blur's fill opacity makes the fill see-through.
+            let glass = style
+                .get("filters")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .find(|f| {
+                    text(f, "type") == Some("uxdesign#blur")
+                        && f.get("visible").and_then(Value::as_bool) != Some(false)
+                        && f.pointer("/params/backgroundEffect")
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                })
+                .and_then(|f| f.get("params").and_then(|p| num(p, "fillOpacity")));
+            if let Some(o) = glass {
+                let mut paints = node.fills.as_slice().to_vec();
+                for p in &mut paints {
+                    p.opacity *= o;
+                }
+                node.fills = Paints::new(paints);
             }
             if let Some(s) = self.stroke(style.get("stroke"), size) {
                 node.ext_mut().strokes = Some(Box::new(s));
@@ -451,7 +474,7 @@ impl Builder<'_> {
     }
 
     /// Text node and the vertical offset from the object origin to the box top.
-    fn text(&mut self, o: &Value, style: &Value) -> Option<(Node, f32)> {
+    fn text(&mut self, o: &Value, style: &Value) -> Option<(Node, (f32, f32))> {
         let t = o.get("text")?;
         let content = text(t, "rawText").unwrap_or("").to_owned();
         let font = style.get("font").unwrap_or(&Value::Null);
@@ -504,7 +527,10 @@ impl Builder<'_> {
             });
         }
         let frame = t.get("frame").unwrap_or(&Value::Null);
-        let area = text(frame, "type") == Some("area");
+        // "autoHeight" text has a fixed width and grows downwards; like area text, its origin
+        // is the top-left corner.
+        let auto_height = text(frame, "type") == Some("autoHeight");
+        let area = auto_height || text(frame, "type") == Some("area");
         let size = styles[0].size;
         let first_baseline = t
             .pointer("/paragraphs/0/lines/0/0/y")
@@ -514,7 +540,9 @@ impl Builder<'_> {
             content: content.into(),
             runs: runs.into(),
             styles: styles.into(),
-            sizing: if area {
+            sizing: if auto_height {
+                TextSizing::AutoHeight
+            } else if area {
                 TextSizing::Fixed
             } else {
                 TextSizing::AutoWidth
@@ -528,7 +556,24 @@ impl Builder<'_> {
             align_v: TextAlignV::Top,
             paragraph_spacing: num(attrs, "paragraphAfterSpacing").unwrap_or(0.0),
         };
-        let (w, h) = if area {
+        let (w, h) = if auto_height {
+            // Height from the last laid-out baseline XD stored, plus the descent.
+            let last = t
+                .get("paragraphs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .flat_map(|p| {
+                    p.get("lines")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                })
+                .flat_map(|l| l.as_array().into_iter().flatten())
+                .filter_map(|run| num(run, "y"))
+                .fold(0.0_f32, f32::max);
+            (num(frame, "width").unwrap_or(0.0), last + size * 0.4)
+        } else if area {
             (
                 num(frame, "width").unwrap_or(0.0),
                 num(frame, "height").unwrap_or(0.0),
@@ -551,9 +596,15 @@ impl Builder<'_> {
         } else {
             first_baseline - size * ASCENT
         };
+        // Centred and right-aligned point text is anchored at its centre or right edge.
+        let dx = match (area, data.align_h) {
+            (false, TextAlignH::Center) => -w / 2.0,
+            (false, TextAlignH::Right) => -w,
+            _ => 0.0,
+        };
         Some((
             Node::new(NodeKind::Text(Box::new(data)), Symbol::EMPTY).with_size(w, h),
-            dy,
+            (dx, dy),
         ))
     }
 

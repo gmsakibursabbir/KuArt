@@ -23,7 +23,7 @@ design-editor-cli: headless tools for KuArt (.krt) documents
 
 USAGE:
     design-editor-cli inspect <file>
-    design-editor-cli convert <input> <output>
+    design-editor-cli convert <input> <output> [--artboard N]   (N: 0-based, raster/SVG only)
     design-editor-cli generate <output.krt> [--nodes N] [--seed S]
     design-editor-cli code <input> <html|css|tailwind|react|vue|tokens> [output]
     design-editor-cli mcp              (MCP server on stdio, for AI agents)
@@ -36,7 +36,15 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("inspect") if args.len() == 2 => cmd_inspect(Path::new(&args[1])),
-        Some("convert") if args.len() == 3 => cmd_convert(Path::new(&args[1]), Path::new(&args[2])),
+        Some("convert") if args.len() == 3 => {
+            cmd_convert(Path::new(&args[1]), Path::new(&args[2]), None)
+        }
+        Some("convert") if args.len() == 5 && args[3] == "--artboard" => {
+            let n = args[4]
+                .parse()
+                .map_err(|_| "--artboard takes a number".to_string());
+            n.and_then(|n| cmd_convert(Path::new(&args[1]), Path::new(&args[2]), Some(n)))
+        }
         Some("generate") if args.len() >= 2 => cmd_generate(&args[1..]),
         Some("mcp") if args.len() == 1 => mcp::run(),
         Some("code") if (3..=4).contains(&args.len()) => {
@@ -252,7 +260,7 @@ fn kind_name(k: &NodeKind) -> &'static str {
     }
 }
 
-fn cmd_convert(input: &Path, output: &Path) -> CliResult {
+fn cmd_convert(input: &Path, output: &Path, artboard: Option<usize>) -> CliResult {
     let doc = open(input)?;
     match extension(output).as_str() {
         "krt" | "design" => save_to_path(&doc, output).map_err(|e| e.to_string())?,
@@ -262,11 +270,22 @@ fn cmd_convert(input: &Path, output: &Path) -> CliResult {
                 .children(doc.root())
                 .first()
                 .ok_or("document has no pages")?;
+            // One artboard (top-level layer of the first page), at most 1600 px wide.
+            let (page, scale) = match artboard {
+                None => (page, 1.0),
+                Some(n) => {
+                    let id = *doc.children(page).get(n).ok_or_else(|| {
+                        format!("the first page has {} layers", doc.children(page).len())
+                    })?;
+                    let w = doc.node(id).map_or(1.0, |n| f64::from(n.size.w.max(1.0)));
+                    (id, (1600.0 / w).min(1.0))
+                }
+            };
             let bytes = match ude_renderer::RasterFormat::from_extension(ext) {
                 Some(format) => ude_renderer::export_raster(
                     &doc,
                     page,
-                    1.0,
+                    scale,
                     format,
                     &mut ude_renderer::RenderCaches::default(),
                 )?,
