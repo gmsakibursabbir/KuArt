@@ -266,6 +266,39 @@ impl TextEngine {
                 BrushSpec::Solid(convert::color(c, alpha))
             })
             .collect();
+        // A missing icon font turns each icon into its ligature name ("square-instagram") in a
+        // fallback font: keep that inside the icon's box instead of over its neighbours.
+        let missing = box_size.0 > 0.0
+            && box_size.1 > 0.0
+            && text.styles.first().is_some_and(|s| {
+                let family = strings.resolve(s.family);
+                is_icon_font(family) && self.fonts.collection.family_by_name(family).is_none()
+            });
+        if missing {
+            let clip =
+                vello::kurbo::Rect::new(0.0, 0.0, f64::from(box_size.0), f64::from(box_size.1));
+            p.push_layer(
+                transform,
+                &crate::Geom::Rect(clip),
+                vello::peniko::BlendMode::from(vello::peniko::Mix::Normal),
+                1.0,
+            );
+        }
+        self.draw_glyphs(p, text, strings, box_size, transform, &colors);
+        if missing {
+            p.pop_layer();
+        }
+    }
+
+    fn draw_glyphs(
+        &mut self,
+        p: &mut impl Painter,
+        text: &TextData,
+        strings: &Interner,
+        box_size: (f32, f32),
+        transform: Affine,
+        colors: &[BrushSpec],
+    ) {
         let layout = self.layout(text, strings, box_size.0);
         let dy = match text.align_v {
             typography::TextAlignV::Top => 0.0,
@@ -292,6 +325,23 @@ impl TextEngine {
             }
         }
     }
+}
+
+/// Icon fonts (Font Awesome, Material Icons/Symbols, Ionicons, …): their text is ligature names.
+fn is_icon_font(family: &str) -> bool {
+    let f = family.to_ascii_lowercase();
+    [
+        "awesome",
+        "icon",
+        "symbols",
+        "glyph",
+        "feather",
+        "fontello",
+        "remixicon",
+        "boxicons",
+    ]
+    .iter()
+    .any(|k| f.contains(k))
 }
 
 /// Caret and selection inside a text layer being edited (byte offsets into the content).

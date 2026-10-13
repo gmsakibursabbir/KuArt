@@ -726,7 +726,8 @@ impl<'a, 's> Builder<'a, 's> {
             .and_then(|t| t.str("characters"))
             .or_else(|| nc.str("characters"))
             .unwrap_or("")
-            .to_owned();
+            // Figma does not break lines at '\r'; a space keeps the per-character style indices.
+            .replace('\r', " ");
         let base = self.text_style(nc, None)?;
         let mut styles = vec![base];
         let mut runs = Vec::new();
