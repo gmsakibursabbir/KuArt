@@ -2,7 +2,7 @@
 # Binary package from the GitHub release bundle (AUR: kuart-bin).
 # release.yml builds it with SOURCE_URL pointing at the local bundle.
 pkgname=kuart-bin
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc="Fast, offline design editor (Figma, XD, Photoshop, SVG)"
 arch=('x86_64')
