@@ -35,6 +35,7 @@ mod tabs;
 mod text_edit;
 mod tools;
 mod update;
+mod versions;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -207,6 +208,10 @@ struct App {
     grid_frames: (u64, Option<NodeId>, Vec<NodeId>),
     /// Freehand stroke being drawn with the pencil (document coordinates).
     pencil: Option<Vec<Point>>,
+    /// Saved versions of the current file (label, path), refreshed on save and file change.
+    versions: Vec<(String, PathBuf)>,
+    /// A version being opened: shown under this title, not linked to the original file.
+    opening_version: Option<String>,
 }
 
 enum Drag {
@@ -293,6 +298,8 @@ impl App {
             show_grids: true,
             grid_frames: (u64::MAX, None, Vec::new()),
             pencil: None,
+            versions: Vec::new(),
+            opening_version: None,
             index,
             selection: Selection::default(),
             hover: None,
@@ -429,6 +436,7 @@ impl App {
             update_status: self.update_status.as_deref(),
             loading: self.loading.as_deref(),
             fonts: &self.font_names,
+            versions: &self.versions,
         };
         let mut result = None;
         let out = self.egui.run_ui(input, |ui| {
@@ -496,6 +504,11 @@ impl App {
                 Action::Export => self.export_dialog(),
                 Action::DownloadFont(family) => self.download_font(family),
                 Action::CheckUpdates => self.check_updates(),
+                Action::OpenVersion(path, label) if self.loading.is_none() => {
+                    self.opening_version = Some(format!("{} ({label})", self.title));
+                    self.open_path(path);
+                }
+                Action::OpenVersion(..) => {}
                 Action::InstallUpdate => self.install_update(),
                 Action::SetText {
                     id,

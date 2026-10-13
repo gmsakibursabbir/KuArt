@@ -177,6 +177,8 @@ pub enum Action {
     /// Help → Check for updates (GitHub Releases), and installing the update found.
     CheckUpdates,
     InstallUpdate,
+    /// Opens a saved version (path, age label) in a new tab.
+    OpenVersion(PathBuf, String),
     Undo,
     Redo,
     ZoomToFit,
@@ -235,6 +237,8 @@ pub struct Status<'a> {
     pub loading: Option<&'a str>,
     /// Installed font families, sorted (font picker).
     pub fonts: &'a [String],
+    /// Saved versions of the current file: (age label, path), newest first.
+    pub versions: &'a [(String, PathBuf)],
 }
 
 #[derive(Default)]
@@ -614,6 +618,18 @@ impl Panels {
                 actions,
                 Action::Export,
             );
+            ui.menu_button(submenu(ui, icons::CLOCK, "Version history"), |ui| {
+                ui.set_width(200.0);
+                if status.versions.is_empty() {
+                    ui.label(RichText::new("Versions appear after saving").color(t.text_muted));
+                }
+                for (label, path) in status.versions {
+                    if ui.button(format!("Saved {label}")).clicked() {
+                        actions.push(Action::OpenVersion(path.clone(), label.clone()));
+                        ui.close();
+                    }
+                }
+            });
             ui.separator();
             menu_item(
                 ui,
@@ -1378,6 +1394,7 @@ mod tests {
             update_status: Some("KuArt 9.9.9 is available"),
             loading: Some("Big file.fig"),
             fonts: &[],
+            versions: &[],
         };
         let _ = ctx.run_ui(input, |ui| {
             out = Some(panels.ui(

@@ -58,6 +58,12 @@ impl App {
         self.fitted = t.fitted;
         self.panels.layers = t.layers;
         self.doc_id = t.doc_id;
+        self.versions = self
+            .options
+            .file
+            .as_deref()
+            .map(crate::files::version_rows)
+            .unwrap_or_default();
         self.after_switch();
     }
 

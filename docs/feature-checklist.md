@@ -26,7 +26,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ~ Starter files and presets (New design = one 1440×1024 frame)
 - ~ Local documents and cloud documents (local only, by design)
 - ✓ Autosave and crash recovery (on pause, recovered at next launch)
-- ✗ Version history and restore
+- ✓ Version history and restore (last 20 saves per file; File → Version history)
 - ✗ File duplication and document branching
 - ~ Document metadata and ownership (title and source format)
 - ✗ Page and layer linking

@@ -68,6 +68,7 @@ fn main() -> Result<(), String> {
         update_status: None,
         loading: None,
         fonts: &fonts,
+        versions: &[],
     };
     let mut egui_sw = EguiSoftwareRender::new(ColorFieldOrder::Rgba);
     let mut buffer = vec![[0u8; 4]; usize::from(w) * usize::from(h)];

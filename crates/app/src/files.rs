@@ -151,6 +151,15 @@ impl App {
     pub(crate) fn opened(&mut self, path: PathBuf, result: Result<Document, String>) {
         self.loading = None;
         match result {
+            Ok(doc) if self.opening_version.is_some() => {
+                // A saved version: its own unsaved tab, so saving never overwrites the
+                // version file; Save asks where to put it.
+                self.open_in_new_tab(doc, None);
+                if let Some(title) = self.opening_version.take() {
+                    self.title = title;
+                    self.update_title();
+                }
+            }
             Ok(doc) => {
                 self.open_in_new_tab(doc, Some(path.clone()));
                 crate::recents::touch(&path);
@@ -320,6 +329,7 @@ impl App {
     }
 
     fn save_to(&mut self, path: PathBuf) {
+        crate::versions::keep(&path);
         match ude_format_native::save_to_path(&self.doc, &path) {
             Ok(()) => {
                 crate::autosave::remove(self.doc_id);
@@ -329,6 +339,7 @@ impl App {
                     crate::recents::write_thumbnail(&path, &self.doc, page, &mut self.caches);
                 }
                 self.recents_dirty = true;
+                self.versions = version_rows(&path);
                 self.options.file = Some(path);
                 self.saved_revision = self.doc.revision();
                 self.update_title();
@@ -413,6 +424,7 @@ impl App {
     }
 
     pub(crate) fn replace_document(&mut self, mut doc: Document, path: Option<PathBuf>) {
+        self.versions = path.as_deref().map(version_rows).unwrap_or_default();
         self.doc_id = crate::autosave::new_id();
         self.end_text_edit();
         self.path_edit = None;
@@ -479,4 +491,12 @@ pub(crate) fn blank_document() -> Document {
     let _ = doc.build_child(root, ude_core::Node::new(NodeKind::Page, name));
     let _ = doc.take_changes();
     doc
+}
+
+/// Version-history menu rows for `file`: ("5 min ago", saved copy).
+pub(crate) fn version_rows(file: &std::path::Path) -> Vec<(String, PathBuf)> {
+    crate::versions::list(file)
+        .into_iter()
+        .map(|(p, secs)| (crate::versions::age(secs), p))
+        .collect()
 }
