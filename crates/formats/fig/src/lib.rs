@@ -221,7 +221,7 @@ impl Warnings {
         }
         if self.overrides > 0 {
             w.push(format!(
-                "{} instance override(s) could not be applied (nested override paths)",
+                "{} instance override(s) could not be applied (unreadable override paths)",
                 self.overrides
             ));
         }
@@ -261,7 +261,9 @@ struct Builder<'a, 's> {
 }
 
 /// Override values for nodes inside an instance, keyed by the overridden node's guid.
-type Overrides<'v, 's> = HashMap<Guid, Vec<&'v Value<'s>>>;
+/// Instance overrides by path of guids, relative to the instance being expanded: `[g]` patches
+/// node `g`; `[n, g, ..]` is passed into the nested instance `n`.
+type Overrides<'v, 's> = HashMap<Vec<Guid>, Vec<&'v Value<'s>>>;
 
 impl<'a, 's> Builder<'a, 's> {
     fn kids(&self, id: Guid) -> Vec<Guid> {
@@ -284,7 +286,7 @@ impl<'a, 's> Builder<'a, 's> {
         };
         // Instance overrides replace fields of the component's node.
         let patched;
-        let nc: &Value = match overrides.and_then(|o| o.get(&id)) {
+        let nc: &Value = match overrides.and_then(|o| o.get([id].as_slice())) {
             Some(list) => {
                 patched = patch(original, list);
                 &patched
@@ -393,7 +395,16 @@ impl<'a, 's> Builder<'a, 's> {
                 self.warnings.deep_instances += 1;
                 return Ok(());
             }
-            let mut inner = overrides.cloned().unwrap_or_default();
+            // Overrides addressed through this nested instance lose their first step here.
+            let mut inner: Overrides = HashMap::new();
+            for (path, list) in overrides.into_iter().flatten() {
+                let key = match path.as_slice() {
+                    [first, rest @ ..] if *first == id && !rest.is_empty() => rest.to_vec(),
+                    [_] => path.clone(),
+                    _ => continue,
+                };
+                inner.entry(key).or_default().extend(list.iter().copied());
+            }
             self.collect_overrides(original, &mut inner);
             for child in self.kids(symbol) {
                 self.node(child, built, depth + 1, Some(&inner))?;
@@ -406,19 +417,16 @@ impl<'a, 's> Builder<'a, 's> {
         Ok(())
     }
 
-    /// Single-level overrides (`guidPath` of one guid) are applied; deeper paths are counted.
+    /// The instance's own overrides, by guid path (nested paths reach nested instances).
     fn collect_overrides(&mut self, nc: &'a Value<'s>, out: &mut Overrides<'a, 's>) {
         let Some(data) = nc.get("symbolData") else {
             return;
         };
         for o in data.array("symbolOverrides") {
             let path = o.get("guidPath").map(|p| p.array("guids")).unwrap_or(&[]);
-            match path {
-                [one] => {
-                    if let Some(g) = guid(Some(one)) {
-                        out.entry(g).or_default().push(o);
-                    }
-                }
+            let guids: Option<Vec<Guid>> = path.iter().map(|g| guid(Some(g))).collect();
+            match guids {
+                Some(g) if !g.is_empty() => out.entry(g).or_default().push(o),
                 _ => self.warnings.overrides += 1,
             }
         }
