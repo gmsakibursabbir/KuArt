@@ -162,8 +162,8 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Device presets for mobile, tablet and desktop
 
 ## F. Components and design systems
-- ~ Reusable components (imported; no create-component command)
-- ~ Component instances (imported, expanded, linked to main)
+- ✓ Reusable components (Ctrl+Alt+K)
+- ✓ Component instances (Ctrl+D on a main; linked and kept in sync)
 - ~ Nested components (imported)
 - ✗ Component properties
 - ✗ Boolean properties
