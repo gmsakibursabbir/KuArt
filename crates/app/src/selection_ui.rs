@@ -66,6 +66,8 @@ pub fn build_overlay(
         path_handles: Vec::new(),
         path_rubber: None,
         path_closing: None,
+        grid_bands: Vec::new(),
+        grid_lines: Vec::new(),
         text_selection: Vec::new(),
     }
 }

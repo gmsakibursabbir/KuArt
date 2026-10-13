@@ -11,7 +11,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ~ Page thumbnails and navigation (pages list; thumbnails only for files on the home screen)
 - ~ Zoom, pan, fit-to-screen and zoom-to-selection (no zoom-to-selection yet)
 - ~ Rulers, guides and smart guides (smart guides only)
-- ✗ Configurable grids and layout grids (imported grids are kept, not drawn)
+- ✓ Layout grids: columns, rows, square grid; drawn on the canvas (Shift+G)
 - ~ Snap to grid, guides and objects (snap to objects)
 - ✓ Alignment and distribution (toolbar, Object menu, Alt shortcuts)
 - ✓ Layer ordering and grouping

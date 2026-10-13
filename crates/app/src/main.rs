@@ -201,6 +201,10 @@ struct App {
     /// (kept a frame so deleting a layer still reflows its parent).
     laid_out: u64,
     layout_scope: Vec<NodeId>,
+    /// Layout grids drawn on the canvas (Shift+G), and the frames that have one, per
+    /// (revision, page) so frames are not scanned every frame.
+    show_grids: bool,
+    grid_frames: (u64, Option<NodeId>, Vec<NodeId>),
 }
 
 enum Drag {
@@ -284,6 +288,8 @@ impl App {
             font_names: Vec::new(),
             laid_out: 0,
             layout_scope: Vec::new(),
+            show_grids: true,
+            grid_frames: (u64::MAX, None, Vec::new()),
             index,
             selection: Selection::default(),
             hover: None,
@@ -626,6 +632,11 @@ impl App {
         overlay.caret = caret;
         overlay.text_selection = text_selection;
         let page_index = self.page_index();
+        if self.show_grids {
+            let (bands, lines) = self.grid_overlay(view.transform);
+            overlay.grid_bands = bands;
+            overlay.grid_lines = lines;
+        }
         overlay.pins = self
             .doc
             .comments
@@ -815,6 +826,10 @@ impl App {
             }
             KeyCode::KeyV if ctrl => self.paste(),
             KeyCode::KeyD if ctrl => self.structural("duplicate"),
+            KeyCode::KeyG if shift && !ctrl && !alt => {
+                self.show_grids = !self.show_grids;
+                self.redraw();
+            }
             KeyCode::KeyG if ctrl && shift => self.structural("ungroup"),
             KeyCode::KeyG if ctrl => self.structural("group"),
             KeyCode::BracketRight if ctrl => self.arrange(if shift {
@@ -934,6 +949,52 @@ impl App {
         self.layout_scope.clear();
         self.layout_scope
             .extend(self.selection.ids().iter().copied());
+    }
+
+    /// Layout grids of the page's frames, in device space.
+    #[allow(clippy::type_complexity)]
+    fn grid_overlay(
+        &mut self,
+        view: ude_renderer::vello::kurbo::Affine,
+    ) -> (Vec<[Point; 4]>, Vec<(Point, Point)>) {
+        let (mut bands, mut lines) = (Vec::new(), Vec::new());
+        let Some(page) = self.page else {
+            return (bands, lines);
+        };
+        let key = (self.doc.revision(), Some(page));
+        if (self.grid_frames.0, self.grid_frames.1) != key {
+            let doc = &self.doc;
+            let frames = doc
+                .descendants(page)
+                .filter(|&id| {
+                    doc.node(id)
+                        .and_then(|n| n.ext.as_ref())
+                        .is_some_and(|e| !e.grids.is_empty())
+                })
+                .collect();
+            self.grid_frames = (key.0, key.1, frames);
+        }
+        for &id in &self.grid_frames.2 {
+            let Some(n) = self.doc.node(id) else { continue };
+            let Some(grids) = n.ext.as_ref().map(|e| &e.grids).filter(|g| !g.is_empty()) else {
+                continue;
+            };
+            if !n.is_visible() {
+                continue;
+            }
+            let m = view * ude_renderer::convert::affine(&self.doc.world_transform(id));
+            let pt = |x: f32, y: f32| m * Point::new(f64::from(x), f64::from(y));
+            for g in grids.iter() {
+                let (b, l) = ude_core::layout::grid_geometry(g, n.size.w, n.size.h);
+                bands.extend(
+                    b.iter().map(|&[x, y, w, h]| {
+                        [pt(x, y), pt(x + w, y), pt(x + w, y + h), pt(x, y + h)]
+                    }),
+                );
+                lines.extend(l.iter().map(|&[x0, y0, x1, y1]| (pt(x0, y0), pt(x1, y1))));
+            }
+        }
+        (bands, lines)
     }
 
     /// Shift+A: auto layout on the selected frames that have none.

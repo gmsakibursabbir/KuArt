@@ -44,6 +44,9 @@ pub struct Overlay {
     pub path_handles: Vec<(Point, Point)>,
     pub path_rubber: Option<BezPath>,
     pub path_closing: Option<Point>,
+    /// Layout grids (device space): filled column/row bands and square-grid lines.
+    pub grid_bands: Vec<[Point; 4]>,
+    pub grid_lines: Vec<(Point, Point)>,
 }
 
 impl Overlay {
@@ -57,6 +60,8 @@ impl Overlay {
             && self.caret.is_none()
             && self.text_selection.is_empty()
             && self.path.is_none()
+            && self.grid_bands.is_empty()
+            && self.grid_lines.is_empty()
     }
 }
 
@@ -64,6 +69,30 @@ pub fn paint_overlay(o: &Overlay, p: &mut impl Painter) {
     let scale = if o.scale > 0.0 { o.scale } else { 1.0 };
     let line = scale;
     let accent = o.accent.unwrap_or(ACCENT);
+    // Layout grids sit under everything else, in the usual translucent red.
+    let band = BrushSpec::Solid(Color::from_rgba8(255, 0, 0, 26));
+    for q in &o.grid_bands {
+        let mut path = BezPath::new();
+        path.move_to(q[0]);
+        for &pt in &q[1..] {
+            path.line_to(pt);
+        }
+        path.close_path();
+        p.fill(
+            Affine::IDENTITY,
+            &Geom::Path(&path),
+            Fill::NonZero,
+            &band,
+            None,
+        );
+    }
+    let grid_line = BrushSpec::Solid(Color::from_rgba8(255, 0, 0, 46));
+    for &(a, b) in &o.grid_lines {
+        let mut path = BezPath::new();
+        path.move_to(a);
+        path.line_to(b);
+        p.stroke(Affine::IDENTITY, &Geom::Path(&path), scale, &grid_line);
+    }
     for q in &o.text_selection {
         let mut path = BezPath::new();
         path.move_to(q[0]);

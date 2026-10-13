@@ -16,6 +16,7 @@ use crate::{Action, ExportFormat, ExportOptions, icons};
 mod auto_layout;
 mod effects;
 mod gradient;
+mod grids;
 
 const KEY_SPACE: u64 = 1 << 63;
 
@@ -249,6 +250,7 @@ impl Inspector {
         }
         if auto_layout::can_auto_layout(n) {
             self.auto_layout_section(ui, t, doc, id, n, actions);
+            self.grids_section(ui, t, id, n, actions);
         }
 
         // Layer: opacity and blend mode.
