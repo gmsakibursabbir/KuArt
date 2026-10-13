@@ -341,8 +341,12 @@ impl Builder<'_> {
                         n
                     }
                     None => {
-                        let kind = text(shape, "type").unwrap_or("shape").to_owned();
-                        *self.warnings.unknown.entry(kind).or_default() += 1;
+                        // An empty path draws nothing; only real unknown shapes are reported.
+                        let empty = text(shape, "path").is_some_and(|d| d.trim().is_empty());
+                        if !empty {
+                            let kind = text(shape, "type").unwrap_or("shape").to_owned();
+                            *self.warnings.unknown.entry(kind).or_default() += 1;
+                        }
                         return Ok(());
                     }
                 }
