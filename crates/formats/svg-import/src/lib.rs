@@ -280,9 +280,19 @@ impl Importer {
                     to_box(origin, affine(g.transform()) * unit, size)?,
                 )))
             }
-            usvg::Paint::Pattern(_) => {
-                self.warn("Pattern fills");
-                return None;
+            // Design tools export image fills as a pattern holding one image: an image fill.
+            usvg::Paint::Pattern(p) => {
+                match first_image(p.root()).and_then(|i| self.image_asset(i)) {
+                    Some(asset) => PaintKind::Image {
+                        asset,
+                        mode: ude_core::styles::ImageScaleMode::Fill,
+                        transform: None,
+                    },
+                    None => {
+                        self.warn("Pattern fills");
+                        return None;
+                    }
+                }
             }
         };
         Some(Paint {
@@ -297,15 +307,33 @@ impl Importer {
         if !i.is_visible() {
             return;
         }
+        let Some(asset) = self.image_asset(i) else {
+            return;
+        };
+        let size = i.size();
+        let name = self.name(i.id(), "Image");
+        self.add(
+            parent,
+            Node::new(NodeKind::Raster { asset }, name).with_size(size.width(), size.height()),
+        );
+    }
+
+    fn image_asset(&mut self, i: &usvg::Image) -> Option<ude_core::AssetId> {
         let (bytes, codec) = match i.kind() {
             usvg::ImageKind::PNG(b) => (b, Codec::Png),
             usvg::ImageKind::JPEG(b) => (b, Codec::Jpeg),
             usvg::ImageKind::WEBP(b) => (b, Codec::WebP),
-            usvg::ImageKind::GIF(_) => return self.warn("GIF images"),
-            usvg::ImageKind::SVG(_) => return self.warn("Nested SVG images"),
+            usvg::ImageKind::GIF(_) => {
+                self.warn("GIF images");
+                return None;
+            }
+            usvg::ImageKind::SVG(_) => {
+                self.warn("Nested SVG images");
+                return None;
+            }
         };
         let size = i.size();
-        let asset = self.doc.assets.insert(AssetEntry {
+        Some(self.doc.assets.insert(AssetEntry {
             hash: ContentHash(*blake3::hash(bytes).as_bytes()),
             // Pixel size is read by the renderer's decoder; use the placed size as the hint.
             kind: AssetKind::Image {
@@ -316,13 +344,16 @@ impl Importer {
                 bytes: bytes.as_slice().into(),
                 codec,
             },
-        });
-        let name = self.name(i.id(), "Image");
-        self.add(
-            parent,
-            Node::new(NodeKind::Raster { asset }, name).with_size(size.width(), size.height()),
-        );
+        }))
     }
+}
+
+fn first_image(g: &usvg::Group) -> Option<&usvg::Image> {
+    g.children().iter().find_map(|n| match n {
+        usvg::Node::Image(i) => Some(i.as_ref()),
+        usvg::Node::Group(g) => first_image(g),
+        _ => None,
+    })
 }
 
 /// Gradient transform in our convention: maps unit gradient space into the unit node box.

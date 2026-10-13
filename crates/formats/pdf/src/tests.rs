@@ -104,7 +104,11 @@ fn imports_paths_colours_forms_and_text() {
         "inherited MediaBox"
     );
     let kids = doc.children(frame);
-    assert_eq!(kids.len(), 6, "rect, line, form square, text, clip group, square");
+    assert_eq!(
+        kids.len(),
+        6,
+        "rect, line, form square, text, clip group, square"
+    );
 
     // y-up → y-down: the rect at y 60..90 lands at 10..40 from the top.
     let rect = doc.node(kids[0]).unwrap();
@@ -158,7 +162,10 @@ fn imports_paths_colours_forms_and_text() {
             .flags
             .contains(ude_core::NodeFlags::IS_MASK)
     );
-    assert!(doc.node(kids[5]).is_some(), "the square after Q is back on the page");
+    assert!(
+        doc.node(kids[5]).is_some(),
+        "the square after Q is back on the page"
+    );
 }
 
 #[test]
