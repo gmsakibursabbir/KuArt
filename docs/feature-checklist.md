@@ -37,7 +37,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 ## B. Vector drawing and illustration
 - ✓ Selection tool · ✓ point editing (Enter or double-click a vector)
 - ✓ Pen tool and Bézier curves (P)
-- ✗ Pencil / freehand drawing
+- ✓ Pencil / freehand drawing (Shift+P; smoothed into an editable path)
 - ~ Line, arrow and connector tools (line; arrows/connectors only imported)
 - ✓ Rectangle, rounded rectangle, ellipse and polygon
 - ~ Stars and custom shapes (star; no custom shape tool)

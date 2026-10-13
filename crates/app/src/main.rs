@@ -205,6 +205,8 @@ struct App {
     /// (revision, page) so frames are not scanned every frame.
     show_grids: bool,
     grid_frames: (u64, Option<NodeId>, Vec<NodeId>),
+    /// Freehand stroke being drawn with the pencil (document coordinates).
+    pencil: Option<Vec<Point>>,
 }
 
 enum Drag {
@@ -290,6 +292,7 @@ impl App {
             layout_scope: Vec::new(),
             show_grids: true,
             grid_frames: (u64::MAX, None, Vec::new()),
+            pencil: None,
             index,
             selection: Selection::default(),
             hover: None,
@@ -621,7 +624,7 @@ impl App {
         }
         self.selection_box = overlay.selection_box.map(|o| o.quad);
         let po = self.path_overlay(view.transform);
-        overlay.path = po.path;
+        overlay.path = po.path.or_else(|| self.pencil_overlay(view.transform));
         overlay.path_anchors = po.anchors;
         overlay.path_handles = po.handles;
         overlay.path_rubber = po.rubber;
@@ -748,6 +751,13 @@ impl App {
             return;
         }
         self.nudge_key = None;
+        // Shift+P: pencil (P alone is the pen).
+        if pressed && code == KeyCode::KeyP && shift && !ctrl && !alt {
+            self.end_path_edit();
+            self.tool = Tool::Pencil;
+            self.update_cursor();
+            return self.redraw();
+        }
         if !ctrl
             && !alt
             && let Some(tool) = tools::tool_for_key(code)
@@ -1170,6 +1180,9 @@ impl App {
         if (self.tool == Tool::Pen || self.path_edit.is_some()) && self.path_press(double) {
             return;
         }
+        if self.tool == Tool::Pencil {
+            return self.pencil_press();
+        }
         if self.tool != Tool::Move {
             return self.begin_create();
         }
@@ -1251,6 +1264,7 @@ impl App {
     fn on_left_release(&mut self) {
         self.text_release();
         self.path_release();
+        self.pencil_release();
         if self.marquee.take().is_some() {
             self.redraw();
         }
@@ -1272,7 +1286,7 @@ impl App {
             self.redraw();
             return;
         }
-        if self.path_drag() {
+        if self.path_drag() || self.pencil_drag() {
             return;
         }
         if let Some(Drag::Pending { start }) = self.drag {

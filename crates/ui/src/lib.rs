@@ -253,7 +253,7 @@ pub struct Panels {
     home: home::Home,
 }
 
-const TOOL_ICONS: [(Tool, &str); 9] = [
+const TOOL_ICONS: [(Tool, &str); 10] = [
     (Tool::Move, icons::MOUSE_POINTER_2),
     (Tool::Frame, icons::FRAME),
     (Tool::Rectangle, icons::SQUARE),
@@ -262,6 +262,7 @@ const TOOL_ICONS: [(Tool, &str); 9] = [
     (Tool::Star, icons::STAR),
     (Tool::Line, icons::SLASH),
     (Tool::Pen, icons::PEN_TOOL),
+    (Tool::Pencil, icons::PENCIL),
     (Tool::Text, icons::TYPE),
 ];
 

@@ -25,11 +25,13 @@ pub enum Tool {
     Star,
     Line,
     Pen,
+    /// Freehand drawing (Shift+P).
+    Pencil,
     Text,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 9] = [
+    pub const ALL: [Tool; 10] = [
         Tool::Move,
         Tool::Frame,
         Tool::Rectangle,
@@ -38,6 +40,7 @@ impl Tool {
         Tool::Star,
         Tool::Line,
         Tool::Pen,
+        Tool::Pencil,
         Tool::Text,
     ];
 
@@ -51,6 +54,7 @@ impl Tool {
             Tool::Star => "Star",
             Tool::Line => "Line",
             Tool::Pen => "Pen",
+            Tool::Pencil => "Pencil",
             Tool::Text => "Text",
         }
     }
@@ -66,6 +70,7 @@ impl Tool {
             Tool::Star => 'S',
             Tool::Line => 'L',
             Tool::Pen => 'P',
+            Tool::Pencil => return None,
             Tool::Text => 'T',
         })
     }
@@ -241,8 +246,8 @@ pub fn default_node(doc: &mut Document, tool: Tool) -> Node {
             name,
         )
         .with_fills(grey),
-        Tool::Line | Tool::Pen => {
-            let kind = if tool == Tool::Pen {
+        Tool::Line | Tool::Pen | Tool::Pencil => {
+            let kind = if tool != Tool::Line {
                 NodeKind::Vector(Default::default())
             } else {
                 NodeKind::Line

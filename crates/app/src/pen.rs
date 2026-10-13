@@ -320,6 +320,86 @@ impl App {
         o
     }
 
+    /// Pencil: starts a stroke at the pointer.
+    pub(crate) fn pencil_press(&mut self) {
+        let p = self.doc_point(self.cursor);
+        self.pencil = Some(vec![p]);
+        self.redraw();
+    }
+
+    /// Pencil: adds the pointer to the stroke (skipping sub-pixel moves).
+    pub(crate) fn pencil_drag(&mut self) -> bool {
+        let p = self.doc_point(self.cursor);
+        let min = 0.75 / (self.camera.zoom * self.scale_factor());
+        let Some(stroke) = &mut self.pencil else {
+            return false;
+        };
+        if stroke.last().is_none_or(|l| l.distance(p) >= min) {
+            stroke.push(p);
+            self.redraw();
+        }
+        true
+    }
+
+    /// Pencil: smooths the stroke into a vector layer (one undo step).
+    pub(crate) fn pencil_release(&mut self) {
+        let Some(stroke) = self.pencil.take() else {
+            return;
+        };
+        if stroke.len() < 2 {
+            return self.redraw();
+        }
+        let tol = 1.5 / (self.camera.zoom * self.scale_factor());
+        let path = EditPath {
+            subs: vec![path_edit::freehand(&stroke, tol)],
+        };
+        let parent = self
+            .index
+            .as_ref()
+            .and_then(|i| artboard_at(&self.doc, i, stroke[0]))
+            .or(self.page);
+        let Some(parent) = parent else { return };
+        let key = self.next_merge_key();
+        let mut id = None;
+        match path_edit::commit(
+            &mut self.doc,
+            &mut self.history,
+            &mut id,
+            parent,
+            &path,
+            key,
+        ) {
+            Ok(()) => {
+                if let Some(id) = id {
+                    // Named after the tool that drew it, in the same undo step.
+                    let name = self.doc.strings.intern("Pencil");
+                    let mut tx = ude_core::Transaction::new("Pencil").with_merge_key(key);
+                    let set = ude_core::Op::Set {
+                        id,
+                        value: ude_core::Prop::Name(name),
+                    };
+                    if tx.apply(&mut self.doc, set).is_ok() {
+                        self.history.commit(&mut self.doc, tx);
+                    }
+                    self.selection.set([id]);
+                }
+            }
+            Err(e) => eprintln!("pencil failed: {e}"),
+        }
+        self.redraw();
+    }
+
+    /// The stroke being drawn, in device space (for the overlay).
+    pub(crate) fn pencil_overlay(&self, view: Affine) -> Option<BezPath> {
+        let stroke = self.pencil.as_ref()?;
+        let mut b = BezPath::new();
+        b.move_to(view * stroke[0]);
+        for &p in &stroke[1..] {
+            b.line_to(view * p);
+        }
+        Some(b)
+    }
+
     /// Status bar hint for the current tool or session.
     pub(crate) fn hint(&self) -> Option<&'static str> {
         if let Some(e) = &self.path_edit {
@@ -348,6 +428,7 @@ impl App {
                 _ => None,
             },
             Tool::Pen => Some("Click to start a path · drag to curve"),
+            Tool::Pencil => Some("Drag to draw freehand · the stroke is smoothed when you let go"),
             Tool::Text => Some("Click to add text"),
             _ => Some(
                 "Drag to draw · Shift keeps proportions · Alt draws from the centre · click for 100×100",

@@ -356,6 +356,63 @@ impl EditPath {
     }
 }
 
+/// A smooth path through a freehand stroke: points closer than `tolerance` to the simplified
+/// line are dropped (Ramer–Douglas–Peucker), and the rest get Catmull–Rom handles.
+pub fn freehand(points: &[Point], tolerance: f64) -> SubPath {
+    fn simplify(p: &[Point], tol: f64, out: &mut Vec<Point>) {
+        let (Some(&a), Some(&b)) = (p.first(), p.last()) else {
+            return;
+        };
+        let ab = b - a;
+        let len = ab.hypot();
+        let far = p
+            .iter()
+            .enumerate()
+            .skip(1)
+            .take(p.len().saturating_sub(2))
+            .map(|(i, &q)| {
+                let d = if len > 0.0 {
+                    (ab.cross(q - a) / len).abs()
+                } else {
+                    q.distance(a)
+                };
+                (i, d)
+            })
+            .max_by(|x, y| x.1.total_cmp(&y.1));
+        match far {
+            Some((i, d)) if d > tol => {
+                simplify(&p[..=i], tol, out);
+                out.pop();
+                simplify(&p[i..], tol, out);
+            }
+            _ => out.extend([a, b]),
+        }
+    }
+    let mut kept = Vec::new();
+    simplify(points, tolerance, &mut kept);
+    kept.dedup_by(|a, b| a.distance(*b) < 1e-6);
+    let n = kept.len();
+    let anchors = (0..n)
+        .map(|i| {
+            let p = kept[i];
+            if i == 0 || i + 1 == n {
+                return Anchor::corner(p);
+            }
+            // Catmull–Rom tangent: a sixth of the way between the neighbours.
+            let d = (kept[i + 1] - kept[i - 1]) / 6.0;
+            Anchor {
+                p,
+                h_in: p - d,
+                h_out: p + d,
+            }
+        })
+        .collect();
+    SubPath {
+        anchors,
+        closed: false,
+    }
+}
+
 /// Writes `path` (document coordinates) into the vector layer `id`, or creates one inside
 /// `parent` when `id` is `None` (pen default: 1 px black stroke, no fill). The layer keeps its
 /// rotation and scale; its box is refitted to the path. One undo step per `merge_key`.
@@ -485,5 +542,17 @@ mod tests {
         // One undo step removes the whole session.
         h.undo(&mut doc).unwrap();
         assert!(doc.children(page).is_empty());
+    }
+
+    #[test]
+    fn freehand_keeps_corners_and_drops_jitter() {
+        // A wobbly line to (100, 0), then up to (100, 100).
+        let mut pts: Vec<Point> = (0..=100)
+            .map(|x| Point::new(f64::from(x), if x % 2 == 0 { 0.2 } else { -0.2 }))
+            .collect();
+        pts.extend((1..=100).map(|y| Point::new(100.0, f64::from(y))));
+        let sub = freehand(&pts, 1.0);
+        assert_eq!(sub.anchors.len(), 3, "start, corner, end");
+        assert!(sub.anchors[1].p.distance(Point::new(100.0, 0.0)) < 1.0);
     }
 }
