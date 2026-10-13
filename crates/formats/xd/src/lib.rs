@@ -65,6 +65,8 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
         images: HashMap::new(),
         warnings: Warnings::default(),
         board: Affine::IDENTITY,
+        parts: HashMap::new(),
+        expanding: 0,
     };
     if let Some(list) = res
         .get("meta")
@@ -78,6 +80,7 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
                     b.symbols.insert(id.to_owned(), s.clone());
                 }
             }
+            index_parts(s, &mut b.parts);
         }
     }
     b.doc.meta.title = name.to_owned();
@@ -144,6 +147,25 @@ pub fn import(bytes: &[u8], name: &str) -> Result<Imported, String> {
     let mut doc = b.doc;
     let _ = doc.take_changes();
     Ok(Imported { doc, warnings })
+}
+
+/// Indexes every typed object with an id below `v`.
+fn index_parts(v: &Value, out: &mut HashMap<String, Value>) {
+    match v {
+        Value::Object(o) => {
+            if let (Some(id), Some(_)) = (
+                o.get("id").and_then(Value::as_str),
+                o.get("type").and_then(Value::as_str),
+            ) {
+                out.entry(id.to_owned()).or_insert_with(|| v.clone());
+            }
+            for c in o.values() {
+                index_parts(c, out);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|c| index_parts(c, out)),
+        _ => {}
+    }
 }
 
 struct Board {
@@ -243,6 +265,11 @@ struct Builder<'z> {
     warnings: Warnings,
     /// Maps canvas to artboard coordinates for the artboard being read.
     board: Affine,
+    /// Every layer inside the symbol masters (and their states), by id: newer files reference
+    /// single master layers from instances.
+    parts: HashMap<String, Value>,
+    /// Nesting of layer references being expanded (guards against cycles).
+    expanding: usize,
 }
 
 impl Builder<'_> {
@@ -283,7 +310,24 @@ impl Builder<'_> {
                             .pointer("/group/children")
                             .and_then(Value::as_array);
                     }
-                    None => self.warnings.unresolved_symbols += 1,
+                    None => match key.and_then(|k| self.parts.get(k)).cloned() {
+                        // A reference to one layer of a master: that layer, with the
+                        // instance's own fields (children, style, text) on top.
+                        Some(mut part) if self.expanding < 16 => {
+                            if let (Some(p), Some(own)) = (part.as_object_mut(), o.as_object()) {
+                                for (k, v) in own {
+                                    if !matches!(k.as_str(), "type" | "syncSourceGuid" | "guid") {
+                                        p.insert(k.clone(), v.clone());
+                                    }
+                                }
+                            }
+                            self.expanding += 1;
+                            let r = self.object(&part, parent, depth);
+                            self.expanding -= 1;
+                            return r;
+                        }
+                        _ => self.warnings.unresolved_symbols += 1,
+                    },
                 }
                 Node::new(NodeKind::Group, Symbol::EMPTY)
             }
