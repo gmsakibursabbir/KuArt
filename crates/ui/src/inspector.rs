@@ -13,6 +13,7 @@ use crate::widgets::{Unit, field_label, icon, icon_button_sized, length, primary
 use crate::{Action, ExportFormat, ExportOptions, icons};
 
 /// Inspector merge keys live in their own range so they never merge with canvas gestures.
+mod auto_layout;
 mod effects;
 mod gradient;
 
@@ -243,6 +244,12 @@ impl Inspector {
         );
 
         self.unit = unit.get();
+        if auto_layout::in_auto_layout(doc, n) {
+            self.layout_child_section(ui, t, id, n, actions);
+        }
+        if auto_layout::can_auto_layout(n) {
+            self.auto_layout_section(ui, t, doc, id, n, actions);
+        }
 
         // Layer: opacity and blend mode.
         let mut opacity = f64::from(n.opacity) * 100.0;

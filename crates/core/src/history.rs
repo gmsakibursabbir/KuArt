@@ -143,23 +143,48 @@ impl History {
                 .undo
                 .back()
                 .is_some_and(|top| top.merge_key == incoming.merge_key);
-        if mergeable && let Some(top) = self.undo.back_mut() {
-            // The older entry already restores the earliest value of each (node, prop).
-            let known: HashSet<_> = top.ops.iter().filter_map(set_key).collect();
-            let mut merged: Vec<Op> = incoming
-                .ops
-                .into_iter()
-                .filter(|op| set_key(op).is_none_or(|k| !known.contains(&k)))
-                .collect();
-            merged.append(&mut top.ops);
-            self.used_bytes -= top.bytes;
-            *top = Entry::new(std::mem::take(&mut top.label), merged, top.merge_key);
-            self.used_bytes += top.bytes;
+        if mergeable {
+            self.merge_into_top(incoming);
         } else {
             self.used_bytes += incoming.bytes;
             self.undo.push_back(incoming);
         }
         self.enforce_budget(doc);
+    }
+
+    /// Folds follow-up property changes caused by the last edit (auto layout reflow) into
+    /// that edit's undo step. Commits normally when there is nothing to fold into.
+    pub fn amend(&mut self, doc: &mut Document, tx: Transaction) {
+        if tx.is_empty() {
+            return;
+        }
+        let mut ops = tx.inverse;
+        ops.reverse();
+        let incoming = Entry::new(tx.label, ops, None);
+        if self.undo.is_empty() || !incoming.only_sets() {
+            self.used_bytes += incoming.bytes;
+            self.undo.push_back(incoming);
+        } else {
+            self.merge_into_top(incoming);
+        }
+        self.enforce_budget(doc);
+    }
+
+    fn merge_into_top(&mut self, incoming: Entry) {
+        let Some(top) = self.undo.back_mut() else {
+            return;
+        };
+        // The older entry already restores the earliest value of each (node, prop).
+        let known: HashSet<_> = top.ops.iter().filter_map(set_key).collect();
+        let mut merged: Vec<Op> = incoming
+            .ops
+            .into_iter()
+            .filter(|op| set_key(op).is_none_or(|k| !known.contains(&k)))
+            .collect();
+        merged.append(&mut top.ops);
+        self.used_bytes -= top.bytes;
+        *top = Entry::new(std::mem::take(&mut top.label), merged, top.merge_key);
+        self.used_bytes += top.bytes;
     }
 
     pub fn undo(&mut self, doc: &mut Document) -> Result<bool, DocError> {

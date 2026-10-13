@@ -197,6 +197,10 @@ struct App {
     loading: Option<String>,
     /// Installed font families for the font picker (filled on first use).
     font_names: Vec<String>,
+    /// Revision the auto layout was last solved for, and the layers edited around then
+    /// (kept a frame so deleting a layer still reflows its parent).
+    laid_out: u64,
+    layout_scope: Vec<NodeId>,
 }
 
 enum Drag {
@@ -278,6 +282,8 @@ impl App {
             quit: false,
             loading: None,
             font_names: Vec::new(),
+            laid_out: 0,
+            layout_scope: Vec::new(),
             index,
             selection: Selection::default(),
             hover: None,
@@ -791,6 +797,7 @@ impl App {
                 self.panels.palette.open();
                 self.redraw();
             }
+            KeyCode::KeyA if shift && !ctrl && !alt => self.add_auto_layout(),
             KeyCode::KeyA if alt => self.align(ude_editor::Align::Left),
             KeyCode::KeyD if alt => self.align(ude_editor::Align::Right),
             KeyCode::KeyH if alt && shift => self.align(ude_editor::Align::DistributeH),
@@ -901,9 +908,58 @@ impl App {
         self.redraw();
     }
 
+    /// Re-solves auto layout around what was just edited, in the same undo step. Undo, redo
+    /// and opening files never reflow (their layout is already right).
+    fn reflow(&mut self) {
+        if self.doc.revision() != self.laid_out {
+            let mut ids = self.selection.ids().to_vec();
+            ids.extend(self.layout_scope.iter().copied());
+            let roots = ude_editor::layout::roots_for(&self.doc, &ids);
+            if !roots.is_empty() {
+                match ude_editor::layout::reflow(&mut self.doc, &roots) {
+                    Ok(tx) => self.history.amend(&mut self.doc, tx),
+                    Err(e) => eprintln!("auto layout failed: {e}"),
+                }
+            }
+            self.laid_out = self.doc.revision();
+        }
+        self.layout_scope.clear();
+        self.layout_scope
+            .extend(self.selection.ids().iter().copied());
+    }
+
+    /// Shift+A: auto layout on the selected frames that have none.
+    fn add_auto_layout(&mut self) {
+        let mut tx = Transaction::new("Add auto layout");
+        for &id in self.selection.ids() {
+            let Some(n) = self.doc.node(id) else { continue };
+            if !matches!(n.kind, NodeKind::Frame | NodeKind::Component(_))
+                || n.ext.as_ref().is_some_and(|e| e.auto_layout.is_some())
+            {
+                continue;
+            }
+            let mut ext = n.ext.clone().unwrap_or_default();
+            ext.auto_layout = Some(Box::new(ude_editor::layout::default_auto_layout(
+                &self.doc, id,
+            )));
+            if let Err(e) = tx.apply(
+                &mut self.doc,
+                Op::Set {
+                    id,
+                    value: ude_core::Prop::Ext(Some(ext)),
+                },
+            ) {
+                eprintln!("auto layout failed: {e}");
+            }
+        }
+        self.history.commit(&mut self.doc, tx);
+        self.redraw();
+    }
+
     fn undo(&mut self) {
         match self.history.undo(&mut self.doc) {
             Ok(true) => {
+                self.laid_out = self.doc.revision();
                 self.selection.retain_valid(&self.doc);
                 self.redraw();
             }
@@ -915,6 +971,7 @@ impl App {
     fn redo(&mut self) {
         match self.history.redo(&mut self.doc) {
             Ok(true) => {
+                self.laid_out = self.doc.revision();
                 self.selection.retain_valid(&self.doc);
                 self.redraw();
             }
@@ -1375,7 +1432,10 @@ impl ApplicationHandler<AppEvent> for App {
                 self.redraw();
             }
             WindowEvent::ScaleFactorChanged { .. } => self.redraw(),
-            WindowEvent::RedrawRequested => self.render(event_loop),
+            WindowEvent::RedrawRequested => {
+                self.reflow();
+                self.render(event_loop);
+            }
             WindowEvent::ModifiersChanged(m) => {
                 self.modifiers = m.state();
                 // Modifiers change the gesture (axis lock, aspect ratio, from centre) mid-drag.

@@ -130,13 +130,13 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Dynamic text and content placeholders
 
 ## E. Layout and responsive design
-- ~ Auto layout / stack layout (imported, exported to flexbox; no reflow)
+- ✓ Auto layout / stack layout (live reflow, Shift+A; exported to flexbox)
 - ~ Horizontal and vertical layout flows (same)
 - ~ Nested layouts (same)
 - ~ Padding and spacing controls (data only)
 - ~ Gap and distribution settings (data only)
-- ~ Hug contents sizing (data only)
-- ~ Fill container sizing (data only)
+- ✓ Hug contents sizing
+- ✓ Fill container sizing
 - ✓ Fixed dimensions
 - ✗ Min/max width and height
 - ~ Alignment within containers (data only)
@@ -366,7 +366,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 | B. Vector drawing | shapes, pen, point editing and booleans done; missing on-canvas gradient handles, path join/split |
 | C. Raster | placement and export done; no image editing |
 | D. Typography | rendering and on-canvas editing done; missing text styles, lists |
-| E. Layout | data imported and exported to code; no live auto-layout or constraints |
+| E. Layout | live auto layout (hug, fill, wrap, gaps, padding, alignment); missing constraints on resize |
 | F. Components | import only; no component editing, variables or libraries |
 | G. UI/UX | drawable by hand; no kits or diagram tools |
 | H. Prototyping, I. Motion | not started |

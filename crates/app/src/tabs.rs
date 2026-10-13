@@ -68,8 +68,10 @@ impl App {
         self.drag = None;
         self.end_text_edit();
         self.path_edit = None;
+        self.layout_scope.clear();
+        self.laid_out = self.doc.revision();
         self.clipboard = ude_editor::Clipboard::default();
-        self.caches.images = ude_renderer::images::ImageCache::default();
+        self.caches.images.clear();
         if let Some(b) = &mut self.backend {
             b.invalidate();
         }

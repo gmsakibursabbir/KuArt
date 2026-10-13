@@ -59,10 +59,12 @@ pub struct ImageCache {
 }
 
 type Key = (AssetId, u8);
-type Done = Arc<Mutex<Vec<(Key, Result<DecodedImage, String>)>>>;
+type Done = Arc<Mutex<Vec<(u64, Key, Result<DecodedImage, String>)>>>;
 
 struct Background {
     done: Done,
+    /// Bumped by `clear`: results from before (another document's assets) are dropped.
+    generation: u64,
     pending: HashSet<Key>,
     wake: Arc<dyn Fn() + Send + Sync>,
 }
@@ -100,9 +102,21 @@ impl ImageCache {
     pub fn decode_in_background(&mut self, wake: impl Fn() + Send + Sync + 'static) {
         self.background = Some(Background {
             done: Arc::default(),
+            generation: 0,
             pending: HashSet::new(),
             wake: Arc::new(wake),
         });
+    }
+
+    /// Forgets every image (another document is shown); background decoding stays on.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.failed.clear();
+        self.used = 0;
+        if let Some(b) = &mut self.background {
+            b.generation += 1;
+            b.pending.clear();
+        }
     }
 
     /// Images still being decoded.
@@ -153,10 +167,14 @@ impl ImageCache {
         self.frame += 1;
         let finished = self.background.as_mut().map(|b| {
             let list = std::mem::take(&mut *b.done.lock().unwrap_or_else(|e| e.into_inner()));
-            for (key, _) in &list {
-                b.pending.remove(key);
-            }
-            list
+            let current = b.generation;
+            list.into_iter()
+                .filter(|(g, ..)| *g == current)
+                .map(|(_, key, result)| {
+                    b.pending.remove(&key);
+                    (key, result)
+                })
+                .collect::<Vec<_>>()
         });
         for (key, result) in finished.into_iter().flatten() {
             self.insert(key, result);
@@ -192,13 +210,14 @@ impl ImageCache {
             match assets.get(id).map(|e| &e.source) {
                 Some(AssetSource::Memory { bytes, codec }) => {
                     let (bytes, codec) = (Arc::clone(bytes), *codec);
-                    let (done, wake) = (Arc::clone(&bg.done), Arc::clone(&bg.wake));
+                    let (done, wake, generation) =
+                        (Arc::clone(&bg.done), Arc::clone(&bg.wake), bg.generation);
                     bg.pending.insert(key);
                     std::thread::spawn(move || {
                         let result = decode_bytes(&bytes, codec, level);
                         done.lock()
                             .unwrap_or_else(|e| e.into_inner())
-                            .push((key, result));
+                            .push((generation, key, result));
                         wake();
                     });
                 }

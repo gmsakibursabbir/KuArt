@@ -117,3 +117,6 @@ pub const SQUARES_SUBTRACT: &str = "\u{e659}";
 pub const SQUARES_INTERSECT: &str = "\u{e658}";
 pub const SQUARES_EXCLUDE: &str = "\u{e657}";
 pub const COMBINE: &str = "\u{e44c}";
+pub const ARROW_RIGHT: &str = "\u{e049}";
+pub const WRAP_TEXT: &str = "\u{e248}";
+pub const MINUS: &str = "\u{e11c}";
