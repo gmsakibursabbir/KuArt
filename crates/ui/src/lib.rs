@@ -67,6 +67,10 @@ pub enum Edit {
     Flatten,
     /// Group with the bottom layer as a mask.
     Mask,
+    /// Components: make one, place an instance of the selected main, detach instances.
+    CreateComponent,
+    CreateInstance,
+    Detach,
     BringForward,
     SendBackward,
     SelectAll,
@@ -768,6 +772,31 @@ impl Panels {
                 "Ctrl+Alt+M",
                 actions,
                 Action::Edit(Edit::Mask),
+            );
+            ui.separator();
+            menu_item(
+                ui,
+                icons::COMPONENT,
+                "Create component",
+                "Ctrl+Alt+K",
+                actions,
+                Action::Edit(Edit::CreateComponent),
+            );
+            menu_item(
+                ui,
+                icons::DIAMOND_PLUS,
+                "Create instance",
+                "Ctrl+D on a component",
+                actions,
+                Action::Edit(Edit::CreateInstance),
+            );
+            menu_item(
+                ui,
+                icons::UNLINK,
+                "Detach instance",
+                "Ctrl+Alt+B",
+                actions,
+                Action::Edit(Edit::Detach),
             );
             ui.separator();
             menu_item(

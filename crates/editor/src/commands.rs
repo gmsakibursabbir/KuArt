@@ -15,9 +15,9 @@ pub struct Clipboard {
 }
 
 #[derive(Clone, Debug)]
-struct Tree {
-    node: Node,
-    children: Vec<Tree>,
+pub(crate) struct Tree {
+    pub(crate) node: Node,
+    pub(crate) children: Vec<Tree>,
 }
 
 impl Clipboard {
@@ -27,7 +27,7 @@ impl Clipboard {
 }
 
 /// Top-level ids in paint order (an id whose ancestor is also selected is skipped).
-fn top_level(doc: &Document, ids: &[NodeId]) -> Vec<NodeId> {
+pub(crate) fn top_level(doc: &Document, ids: &[NodeId]) -> Vec<NodeId> {
     let mut out: Vec<NodeId> = ids
         .iter()
         .copied()
@@ -53,7 +53,7 @@ fn index_in_parent(doc: &Document, id: NodeId) -> (Option<NodeId>, usize) {
     (parent, index)
 }
 
-fn tree(doc: &Document, id: NodeId) -> Option<Tree> {
+pub(crate) fn tree(doc: &Document, id: NodeId) -> Option<Tree> {
     let n = doc.node(id)?;
     let mut node = n.clone();
     node.parent = None;
@@ -65,7 +65,7 @@ fn tree(doc: &Document, id: NodeId) -> Option<Tree> {
 }
 
 /// Creates `t` detached, then attaches it at `parent[index]` inside `tx`.
-fn insert(
+pub(crate) fn insert(
     doc: &mut Document,
     tx: &mut Transaction,
     t: &Tree,
@@ -235,7 +235,7 @@ pub fn flatten(
     Ok(out)
 }
 
-fn group_as(
+pub(crate) fn group_as(
     doc: &mut Document,
     history: &mut History,
     ids: &[NodeId],

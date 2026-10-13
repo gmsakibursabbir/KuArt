@@ -792,6 +792,8 @@ impl App {
             KeyCode::KeyI if ctrl && alt => self.boolean(BoolOpKind::Intersect),
             KeyCode::KeyX if ctrl && alt => self.boolean(BoolOpKind::Exclude),
             KeyCode::KeyM if ctrl && alt => self.structural("mask"),
+            KeyCode::KeyK if ctrl && alt => self.structural("component"),
+            KeyCode::KeyB if ctrl && alt => self.structural("detach"),
             KeyCode::KeyE if ctrl && !shift => self.structural("flatten"),
             KeyCode::KeyK if ctrl => {
                 self.panels.palette.open();
@@ -920,6 +922,12 @@ impl App {
                     Ok(tx) => self.history.amend(&mut self.doc, tx),
                     Err(e) => eprintln!("auto layout failed: {e}"),
                 }
+            }
+            // After layout, so instances get the laid-out main.
+            // Edits inside instances become overrides; edits to a main reach its instances.
+            match ude_editor::components::sync(&mut self.doc, &ids) {
+                Ok(tx) => self.history.amend(&mut self.doc, tx),
+                Err(e) => eprintln!("updating instances failed: {e}"),
             }
             self.laid_out = self.doc.revision();
         }
@@ -1770,10 +1778,30 @@ impl App {
         use ude_editor::commands as c;
         let (doc, history) = (&mut self.doc, &mut self.history);
         let result = match what {
+            // Duplicating a main component places an instance of it (as in Figma).
+            "duplicate"
+                if ids.iter().all(|&id| {
+                    doc.node(id)
+                        .is_some_and(|n| matches!(n.kind, NodeKind::Component(_)))
+                }) =>
+            {
+                ids.iter()
+                    .map(|&m| ude_editor::components::create_instance(doc, history, m))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(|v| v.into_iter().flatten().collect())
+            }
             "duplicate" => c::duplicate(doc, history, &ids),
             "group" => c::group(doc, history, &ids).map(|g| g.into_iter().collect()),
             "flatten" => c::flatten(doc, history, &ids),
             "mask" => c::mask(doc, history, &ids).map(|g| g.into_iter().collect()),
+            "component" => ude_editor::components::create_component(doc, history, &ids)
+                .map(|g| g.into_iter().collect()),
+            "instance" => ids
+                .iter()
+                .map(|&m| ude_editor::components::create_instance(doc, history, m))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|v| v.into_iter().flatten().collect()),
+            "detach" => ude_editor::components::detach(doc, history, &ids),
             _ => c::ungroup(doc, history, &ids),
         };
         match result {
@@ -1830,6 +1858,9 @@ impl App {
             E::Exclude => self.boolean(BoolOpKind::Exclude),
             E::Flatten => self.structural("flatten"),
             E::Mask => self.structural("mask"),
+            E::CreateComponent => self.structural("component"),
+            E::CreateInstance => self.structural("instance"),
+            E::Detach => self.structural("detach"),
             E::BringForward => self.arrange(Arrange::Forward),
             E::SendBackward => self.arrange(Arrange::Backward),
             E::SelectAll => {

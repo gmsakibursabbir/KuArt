@@ -104,6 +104,19 @@ fn layer_menu(
         (icons::GROUP, "Group", "Ctrl+G", E::Group),
         (icons::UNGROUP, "Ungroup", "Ctrl+Shift+G", E::Ungroup),
         (icons::SCAN_EYE, "Use as mask", "Ctrl+Alt+M", E::Mask),
+        (
+            icons::COMPONENT,
+            "Create component",
+            "Ctrl+Alt+K",
+            E::CreateComponent,
+        ),
+        (
+            icons::DIAMOND_PLUS,
+            "Create instance",
+            "",
+            E::CreateInstance,
+        ),
+        (icons::UNLINK, "Detach instance", "Ctrl+Alt+B", E::Detach),
         (icons::COMBINE, "Flatten", "Ctrl+E", E::Flatten),
         (
             icons::BRING_TO_FRONT,

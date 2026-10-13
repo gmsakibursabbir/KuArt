@@ -417,6 +417,7 @@ impl App {
         self.end_text_edit();
         self.path_edit = None;
         self.layout_scope.clear();
+        ude_editor::components::capture_baselines(&mut doc);
         self.laid_out = doc.revision();
         self.page = doc.children(doc.root()).iter().copied().find(|&id| {
             doc.node(id)

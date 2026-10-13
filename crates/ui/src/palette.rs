@@ -86,6 +86,24 @@ fn commands() -> Vec<Entry> {
             Action::Edit(Edit::Mask),
         ),
         c(
+            icons::COMPONENT,
+            "Create component",
+            "Ctrl+Alt+K",
+            Action::Edit(Edit::CreateComponent),
+        ),
+        c(
+            icons::DIAMOND_PLUS,
+            "Create instance",
+            "",
+            Action::Edit(Edit::CreateInstance),
+        ),
+        c(
+            icons::UNLINK,
+            "Detach instance",
+            "Ctrl+Alt+B",
+            Action::Edit(Edit::Detach),
+        ),
+        c(
             icons::BRING_TO_FRONT,
             "Bring forward",
             "Ctrl+]",

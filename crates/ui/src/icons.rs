@@ -120,3 +120,5 @@ pub const COMBINE: &str = "\u{e44c}";
 pub const ARROW_RIGHT: &str = "\u{e049}";
 pub const WRAP_TEXT: &str = "\u{e248}";
 pub const MINUS: &str = "\u{e11c}";
+pub const UNLINK: &str = "\u{e19c}";
+pub const DIAMOND_PLUS: &str = "\u{e5e2}";

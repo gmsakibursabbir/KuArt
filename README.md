@@ -179,7 +179,7 @@ crates/
 
 0.1 completes the MVP (milestones M0–M14). Since then: on-canvas text editing, live boolean
 operations, Dev Mode, PDF export, document tabs and autosave. Next up:
-component editing and P2P collaboration. The full plan and the list of known gaps are in
+variants and P2P collaboration. The full plan and the list of known gaps are in
 [docs/roadmap.md](docs/roadmap.md).
 
 ## Documentation

@@ -172,8 +172,8 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ Component variants
 - ✗ Variant sets and property combinations
 - ~ Component overrides (single-level text/props on import)
-- ✗ Reset and detach instance
-- ✗ Component inheritance (instances do not update from the main)
+- ~ Detach instance (Ctrl+Alt+B) · ✗ reset overrides
+- ✓ Component inheritance: instances follow the main; edits inside an instance become overrides
 - ✗ Component slots or replaceable content areas
 - ✗ Interactive components
 - ✗ Component states
@@ -367,7 +367,7 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 | C. Raster | placement and export done; no image editing |
 | D. Typography | rendering and on-canvas editing done; missing text styles, lists |
 | E. Layout | live auto layout (hug, fill, wrap, gaps, padding, alignment); missing constraints on resize |
-| F. Components | import only; no component editing, variables or libraries |
+| F. Components | create, instance, detach, live sync with overrides; no variants editing, variables or libraries |
 | G. UI/UX | drawable by hand; no kits or diagram tools |
 | H. Prototyping, I. Motion | not started |
 | J. Collaboration | not started (P2P WebRTC and comments planned) |

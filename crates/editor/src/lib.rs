@@ -2,6 +2,7 @@
 //! gestures, snapping and commands. See `docs/architecture.md` §5.
 
 pub mod commands;
+pub mod components;
 pub mod create;
 pub mod layout;
 pub mod path_edit;
