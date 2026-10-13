@@ -68,7 +68,7 @@ impl App {
     }
 
     /// Per-document state that is not parked: hover, gestures, decoded images (keyed by the
-    /// document's asset ids), the cached frame and copied layers.
+    /// document's asset ids) and the cached frame. Copied layers survive: they paste anywhere.
     fn after_switch(&mut self) {
         self.hover = None;
         self.drag = None;
@@ -76,7 +76,6 @@ impl App {
         self.path_edit = None;
         self.layout_scope.clear();
         self.laid_out = self.doc.revision();
-        self.clipboard = ude_editor::Clipboard::default();
         self.caches.images.clear();
         if let Some(b) = &mut self.backend {
             b.invalidate();

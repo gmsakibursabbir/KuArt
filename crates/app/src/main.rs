@@ -162,6 +162,10 @@ struct App {
     font_status: Option<String>,
     /// Copied layers (Ctrl+C / Ctrl+X); valid for the current document only.
     clipboard: ude_editor::Clipboard,
+    /// Document the clipboard was copied from (instances keep links when pasted back).
+    clipboard_doc: u64,
+    /// SVG text we put on the system clipboard; any other SVG there was copied elsewhere.
+    copied_svg: Option<String>,
     /// Diagnostics window (F12).
     diagnostics: bool,
     /// Duration and statistics of the last presented frame.
@@ -212,6 +216,8 @@ struct App {
     versions: Vec<(String, PathBuf)>,
     /// A version being opened: shown under this title, not linked to the original file.
     opening_version: Option<String>,
+    /// The file being loaded is placed into the current document instead of a new tab.
+    placing: bool,
 }
 
 enum Drag {
@@ -270,6 +276,8 @@ impl App {
             proxy: None,
             font_status: None,
             clipboard: ude_editor::Clipboard::default(),
+            clipboard_doc: 0,
+            copied_svg: None,
             diagnostics: false,
             last_frame: None,
             applied_theme: None,
@@ -300,6 +308,7 @@ impl App {
             pencil: None,
             versions: Vec::new(),
             opening_version: None,
+            placing: false,
             index,
             selection: Selection::default(),
             hover: None,
@@ -530,6 +539,7 @@ impl App {
                 Action::Rename(id, name) => self.rename(id, &name),
                 Action::New => self.new_document(),
                 Action::Import => self.import_dialog(),
+                Action::Place => self.place_dialog(),
                 Action::OpenRecent(path) => self.open_path(path),
                 Action::SwitchTab(i) => self.switch_tab(i),
                 Action::CloseTab(i) => {
@@ -1837,9 +1847,12 @@ impl App {
             return;
         }
         self.clipboard = ude_editor::commands::copy(&self.doc, self.selection.ids());
+        self.clipboard_doc = self.doc_id;
+        self.copied_svg = None;
         if let [id] = self.selection.ids()
             && let Ok(svg) = ude_format_svg::export(&self.doc, *id)
         {
+            self.copied_svg = Some(svg.clone());
             self.egui.copy_text(svg);
         }
     }
@@ -1847,12 +1860,49 @@ impl App {
     /// Pastes on top of the current page.
     fn paste(&mut self) {
         let Some(page) = self.page else { return };
+        // SVG copied from a browser or another vector app is imported as layers.
+        let text = self.egui_state.as_mut().and_then(|s| s.clipboard_text());
+        if let Some(svg) =
+            text.filter(|t| t.contains("<svg") && Some(t) != self.copied_svg.as_ref())
+        {
+            return self.paste_svg(&svg, page);
+        }
         if self.clipboard.is_empty() {
             return;
         }
-        match ude_editor::commands::paste(&mut self.doc, &mut self.history, &self.clipboard, page) {
+        let same = self.clipboard_doc == self.doc_id;
+        match ude_editor::commands::paste(
+            &mut self.doc,
+            &mut self.history,
+            &self.clipboard,
+            page,
+            same,
+        ) {
             Ok(ids) => self.selection.set(ids),
             Err(e) => eprintln!("paste failed: {e}"),
+        }
+        self.redraw();
+    }
+
+    fn paste_svg(&mut self, svg: &str, page: NodeId) {
+        let imported = match ude_format_svg_import::import(svg.as_bytes(), "Pasted SVG") {
+            Ok(im) => im.doc,
+            Err(e) => return eprintln!("paste SVG failed: {e}"),
+        };
+        let Some(&src_page) = imported.children(imported.root()).first() else {
+            return;
+        };
+        let roots = imported.children(src_page).to_vec();
+        match ude_editor::commands::paste_from(
+            &mut self.doc,
+            &mut self.history,
+            &imported,
+            &roots,
+            page,
+            false,
+        ) {
+            Ok(ids) => self.selection.set(ids),
+            Err(e) => eprintln!("paste SVG failed: {e}"),
         }
         self.redraw();
     }

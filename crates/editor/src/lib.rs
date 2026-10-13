@@ -5,6 +5,7 @@ pub mod commands;
 pub mod components;
 pub mod create;
 pub mod layout;
+mod merge;
 pub mod path_edit;
 pub mod selection;
 pub mod snap;

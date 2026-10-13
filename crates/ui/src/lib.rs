@@ -161,6 +161,8 @@ pub enum Action {
     New,
     Open,
     Import,
+    /// Adds another file's layers to the current document.
+    Place,
     OpenRecent(PathBuf),
     RemoveRecent(PathBuf),
     /// Close the document and show the home screen.
@@ -584,6 +586,14 @@ impl Panels {
                 "",
                 actions,
                 Action::Import,
+            );
+            menu_item(
+                ui,
+                icons::FILE_PLUS_2,
+                "Place file…",
+                "",
+                actions,
+                Action::Place,
             );
             ui.menu_button(submenu(ui, icons::CLOCK, "Open recent"), |ui| {
                 if status.recents.is_empty() {

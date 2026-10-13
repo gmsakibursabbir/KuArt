@@ -6,12 +6,13 @@ use ude_core::{
     Affine, DocError, Document, History, Node, NodeId, NodeKind, Op, Prop, Rect, Transaction,
 };
 
-/// Copied layers, independent of the document they came from (same-document paste only: names,
-/// fonts and assets are referenced by the source document's tables).
-#[derive(Clone, Debug, Default)]
+/// Copied layers, kept in a small document of their own (with their names, fonts and images),
+/// so they paste into any open document.
+#[derive(Clone, Default)]
 pub struct Clipboard {
-    /// Top-level subtrees, each in its parent's coordinates.
-    trees: Vec<Tree>,
+    doc: Option<std::sync::Arc<Document>>,
+    /// Top-level copied layers, each in its original parent's coordinates.
+    roots: Vec<NodeId>,
 }
 
 #[derive(Clone, Debug)]
@@ -22,7 +23,7 @@ pub(crate) struct Tree {
 
 impl Clipboard {
     pub fn is_empty(&self) -> bool {
-        self.trees.is_empty()
+        self.roots.is_empty()
     }
 }
 
@@ -81,26 +82,59 @@ pub(crate) fn insert(
 }
 
 pub fn copy(doc: &Document, ids: &[NodeId]) -> Clipboard {
+    let mut mini = Document::new();
+    let root = mini.root();
+    let mut remap = crate::merge::Remap::new(doc, true);
+    let mut roots = Vec::new();
+    let mut tx = Transaction::new("Copy");
+    for id in top_level(doc, ids) {
+        let Some(mut t) = tree(doc, id) else { continue };
+        remap.tree(&mut mini, &mut t);
+        let index = mini.children(root).len() as u32;
+        if let Ok(new) = insert(&mut mini, &mut tx, &t, root, index) {
+            roots.push(new);
+        }
+    }
+    let _ = mini.take_changes();
     Clipboard {
-        trees: top_level(doc, ids)
-            .into_iter()
-            .filter_map(|id| tree(doc, id))
-            .collect(),
+        doc: Some(std::sync::Arc::new(mini)),
+        roots,
     }
 }
 
-/// Pastes on top of `parent`'s children. Returns the new layers.
+/// Pastes on top of `parent`'s children. `same_doc`: pasting into the document it was copied
+/// from (instances keep their component links). Returns the new layers.
 pub fn paste(
     doc: &mut Document,
     history: &mut History,
     clip: &Clipboard,
     parent: NodeId,
+    same_doc: bool,
 ) -> Result<Vec<NodeId>, DocError> {
+    match &clip.doc {
+        Some(src) => paste_from(doc, history, src, &clip.roots, parent, same_doc),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Copies `roots` (and their subtrees) of another document on top of `parent`'s children, as
+/// one undo step. Returns the new layers.
+pub fn paste_from(
+    doc: &mut Document,
+    history: &mut History,
+    src: &Document,
+    roots: &[NodeId],
+    parent: NodeId,
+    keep_links: bool,
+) -> Result<Vec<NodeId>, DocError> {
+    let mut remap = crate::merge::Remap::new(src, keep_links);
     let mut tx = Transaction::new("Paste");
     let mut out = Vec::new();
-    for t in &clip.trees {
+    for &r in roots {
+        let Some(mut t) = tree(src, r) else { continue };
+        remap.tree(doc, &mut t);
         let index = doc.children(parent).len() as u32;
-        match insert(doc, &mut tx, t, parent, index) {
+        match insert(doc, &mut tx, &t, parent, index) {
             Ok(id) => out.push(id),
             Err(e) => {
                 tx.rollback(doc)?;
@@ -605,7 +639,7 @@ mod tests {
         assert_eq!(doc.children(page).len(), 3);
 
         let clip = copy(&doc, &[a]);
-        let p = paste(&mut doc, &mut h, &clip, page).unwrap();
+        let p = paste(&mut doc, &mut h, &clip, page, true).unwrap();
         assert_eq!(*doc.children(page).last().unwrap(), p[0]);
         assert_eq!(
             doc.node(p[0]).unwrap().transform.translation(),
@@ -724,5 +758,59 @@ mod tests {
         assert_eq!(doc.children(page), &[a, c, b]);
         arrange(&mut doc, &mut h, &[a], Arrange::Backward).unwrap();
         assert_eq!(doc.children(page), &[a, c, b], "already at the back");
+    }
+
+    #[test]
+    fn paste_into_another_document_carries_names_and_images() {
+        use ude_core::assets::{AssetEntry, AssetKind, AssetSource, Codec, ContentHash};
+        let (src, page, [a, _, _]) = setup();
+        let mut src = src;
+        let asset = src.assets.insert(AssetEntry {
+            hash: ContentHash([1; 32]),
+            kind: AssetKind::Image {
+                width: 1,
+                height: 1,
+            },
+            source: AssetSource::Memory {
+                bytes: std::sync::Arc::from(&b"png"[..]),
+                codec: Codec::Png,
+            },
+        });
+        let name = src.strings.intern("Hero photo");
+        let mut tx = Transaction::new("t");
+        tx.apply(
+            &mut src,
+            Op::Set {
+                id: a,
+                value: Prop::Name(name),
+            },
+        )
+        .unwrap();
+        tx.apply(
+            &mut src,
+            Op::Set {
+                id: a,
+                value: Prop::Kind(NodeKind::Raster { asset }),
+            },
+        )
+        .unwrap();
+        let clip = copy(&src, &[a]);
+        let _ = page;
+
+        // A different document with its own (unrelated) string table.
+        let mut dst = Document::new();
+        dst.strings.intern("unrelated");
+        let root = dst.root();
+        let p2 = dst
+            .build_child(root, Node::new(NodeKind::Page, ude_core::Symbol::EMPTY))
+            .unwrap();
+        let mut h = History::default();
+        let new = paste(&mut dst, &mut h, &clip, p2, false).unwrap();
+        let n = dst.node(new[0]).unwrap();
+        assert_eq!(dst.strings.resolve(n.name), "Hero photo");
+        let NodeKind::Raster { asset: b } = n.kind else {
+            panic!()
+        };
+        assert!(dst.assets.get(b).is_some(), "image copied into the target");
     }
 }

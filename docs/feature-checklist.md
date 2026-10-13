@@ -30,7 +30,7 @@ Summary at the end. Priorities and order of work: [feature-gaps.md](feature-gaps
 - ✗ File duplication and document branching
 - ~ Document metadata and ownership (title and source format)
 - ✗ Page and layer linking
-- ✗ Import and merge documents (import opens a new document)
+- ✓ Import and merge documents (File → Place file…)
 - ✓ Large-document performance (100k layers: 85 MB, frames < 6 ms)
 - ~ Keyboard shortcuts and customization (shortcuts, no customization)
 
@@ -273,8 +273,8 @@ logic, media playback, presentation and sharing). Prototype data in imported fil
 - ✓ SVG import and export · ✓ PDF import and export
 - ✗ EPS · ✗ TIFF · ✗ HEIC · ~ GIF (import first frame inside design files) · ✗ video/audio · ✗ Lottie
 - ✗ Clipboard import from other design applications
-- ✗ Paste SVG from browsers and vector editors
-- ✗ Copy and paste between documents
+- ✓ Paste SVG from browsers and vector editors
+- ✓ Copy and paste between documents (tabs)
 - ✓ Export complete pages · ✓ frames and artboards · ✓ individual layers · ✓ selected objects
 - ✗ Batch export · ✗ Export presets · ✗ Custom filename templates
 - ✓ Transparent backgrounds

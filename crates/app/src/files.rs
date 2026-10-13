@@ -117,6 +117,22 @@ impl App {
         }
     }
 
+    /// File > Place file: another file's layers are added to the current page.
+    pub(crate) fn place_dialog(&mut self) {
+        if self.home || self.loading.is_some() {
+            return;
+        }
+        if let Some(path) = self
+            .file_dialog()
+            .set_title("Place file")
+            .add_filter("Designs and images", OPENABLE)
+            .pick_file()
+        {
+            self.placing = true;
+            self.open_path(path);
+        }
+    }
+
     /// Loads `path` on a worker thread (the window keeps responding and shows a loading
     /// screen); [`Self::opened`] takes the result.
     pub(crate) fn open_path(&mut self, path: PathBuf) {
@@ -150,7 +166,28 @@ impl App {
     /// A worker finished loading a file.
     pub(crate) fn opened(&mut self, path: PathBuf, result: Result<Document, String>) {
         self.loading = None;
+        let placing = std::mem::take(&mut self.placing);
         match result {
+            Ok(src) if placing => {
+                // Every layer of the file's first page, on top of the current page.
+                let (Some(page), Some(&src_page)) = (self.page, src.children(src.root()).first())
+                else {
+                    return;
+                };
+                let roots = src.children(src_page).to_vec();
+                match ude_editor::commands::paste_from(
+                    &mut self.doc,
+                    &mut self.history,
+                    &src,
+                    &roots,
+                    page,
+                    false,
+                ) {
+                    Ok(ids) => self.selection.set(ids),
+                    Err(e) => self.report(&e.to_string()),
+                }
+                self.redraw();
+            }
             Ok(doc) if self.opening_version.is_some() => {
                 // A saved version: its own unsaved tab, so saving never overwrites the
                 // version file; Save asks where to put it.
@@ -443,8 +480,6 @@ impl App {
         self.doc = doc;
         self.history = ude_core::History::default();
         self.selection.clear();
-        // Copied layers reference the previous document's strings and assets.
-        self.clipboard = ude_editor::Clipboard::default();
         self.hover = None;
         self.drag = None;
         self.panels.layers = ude_ui::LayersPanel::default();
